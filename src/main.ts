@@ -4,19 +4,34 @@ import type { EventRecord, RsvpStatus } from './types';
 import { state } from './state';
 import { getAdapter } from './data';
 import { addKnownEvent } from './data/known';
-import { setMyName } from './data/identity';
+import {
+  allRememberedGuestRecords,
+  forgetGuestToken,
+  guestTokenFor,
+  rememberGuestToken,
+  setMyName,
+} from './data/identity';
 import { navigate, onRouteChange, parseRoute, inviteUrl, type ProTab, type Route } from './router';
 import { fireStamp, fireToast } from './ui/fx';
 import { renderHome } from './views/home';
-import { readCreateForm, renderCreate, resetCreateDraft, wireCreatePreview } from './views/create';
+import {
+  prefillCreateDraft,
+  readCreateForm,
+  renderCreate,
+  resetCreateDraft,
+  wireCreatePreview,
+} from './views/create';
 import { renderEvent } from './views/event';
 import { renderPro } from './views/pro';
+import { renderPrivacidade } from './views/privacy';
 import { renderDoor } from './views/door';
 import { buildRecapData, canvasToBlob, recapFileName, renderRecap } from './lib/recap';
 import { WALK_IN_CODE, buildContacts, filterAudience, scoreContacts, type Tier } from './lib/audience';
 import { campaignMessage, reminderMessage } from './lib/messages';
 import { normalizePhoneBR, waLink } from './lib/phone';
+import { initAnalytics, installErrorReporting, track } from './lib/analytics';
 import { sameName } from './lib/format';
+import { NameTakenError } from './types';
 
 const app = document.getElementById('app') as HTMLElement;
 const data = getAdapter();
@@ -53,10 +68,11 @@ function render(): void {
   const route = state.route;
 
   if (route.name === 'home') app.innerHTML = renderHome();
-  else if (route.name === 'create') {
+  else if (route.name === 'create' || route.name === 'edit') {
     app.innerHTML = renderCreate();
     wireCreatePreview();
-  } else if (route.name === 'pro') app.innerHTML = renderPro();
+  } else if (route.name === 'privacidade') app.innerHTML = renderPrivacidade();
+  else if (route.name === 'pro') app.innerHTML = renderPro();
   else if (route.name === 'door') {
     app.innerHTML = state.loading
       ? '<div class="loading-note">Abrindo a portaria...</div>'
@@ -65,7 +81,7 @@ function render(): void {
         : '<div class="error-note">Rolê não encontrado.</div>';
   } else app.innerHTML = renderEvent();
 
-  const routeKey = `${route.name}:${'id' in route ? route.id : ''}`;
+  const routeKey = route.name + ':' + ('id' in route ? route.id : '');
   if (routeKey !== lastRenderedRoute) {
     lastRenderedRoute = routeKey;
     window.scrollTo({ top: 0 });
@@ -74,6 +90,7 @@ function render(): void {
 }
 
 function messageOf(err: unknown): string {
+  if (err instanceof NameTakenError) return err.message;
   return err instanceof Error ? err.message : 'Algo deu errado. Tenta de novo?';
 }
 
@@ -89,6 +106,14 @@ async function loadRoute(route: Route): Promise<void> {
     resetCreateDraft();
     state.loading = false;
     render();
+    // carrega em segundo plano: sem produtora o seletor simplesmente não aparece
+    data
+      .listOrgs()
+      .then((orgs) => {
+        state.orgs = orgs;
+        if (state.route.name === 'create') render();
+      })
+      .catch(() => undefined);
     return;
   }
 
@@ -106,9 +131,31 @@ async function loadRoute(route: Route): Promise<void> {
     return;
   }
 
+  if (route.name === 'privacidade') {
+    state.loading = false;
+    render();
+    return;
+  }
+
   if (route.name === 'pro') {
     state.proTab = route.tab;
     await loadPro();
+    return;
+  }
+
+  if (route.name === 'edit') {
+    state.loading = true;
+    render();
+    try {
+      const [ev, orgs] = await Promise.all([data.getEvent(route.id), data.listOrgs()]);
+      state.event = ev;
+      state.orgs = orgs;
+      if (ev) prefillCreateDraft(ev);
+    } catch (err) {
+      state.error = messageOf(err);
+    }
+    state.loading = false;
+    render();
     return;
   }
 
@@ -225,6 +272,7 @@ async function openRecap(): Promise<void> {
     const canvas = await renderRecap(buildRecapData(ev));
     recapBlob = await canvasToBlob(canvas);
     state.recapUrl = URL.createObjectURL(recapBlob);
+    track('recap_gerado', { comFotos: ev.photos.some((p) => !!p.url) }, ev.id);
   } catch (err) {
     console.error('[galera] recap:', err);
     state.recapUrl = null;
@@ -240,11 +288,12 @@ async function shareRecap(): Promise<void> {
   const shareData: ShareData = {
     files: [file],
     title: ev.title,
-    text: `${ev.emoji} ${ev.title} — criado no Galera. Crie o seu: ${inviteUrl(ev.id)}`,
+    text: `${ev.emoji} ${ev.title} — criado no Galera. Crie o seu: ${inviteUrl(ev.id, null, 'recap')}`,
   };
   if (navigator.canShare?.(shareData)) {
     try {
       await navigator.share(shareData);
+      track('recap_compartilhado', { method: 'share' }, ev.id);
       return;
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -261,6 +310,7 @@ function downloadRecap(): void {
   a.href = state.recapUrl;
   a.download = recapFileName(ev.title);
   a.click();
+  track('recap_compartilhado', { method: 'download' }, ev.id);
 }
 
 /* ===================== campanha e mensagens ===================== */
@@ -373,6 +423,9 @@ document.addEventListener('click', (e) => {
     case 'go-pro':
       navigate({ name: 'pro', tab: state.proTab });
       break;
+    case 'go-privacy':
+      navigate({ name: 'privacidade' });
+      break;
     case 'open-event':
       navigate({ name: 'event', id, code: null });
       break;
@@ -398,6 +451,21 @@ document.addEventListener('click', (e) => {
       state.myName = '';
       setMyName('');
       render();
+      break;
+    case 'edit-event':
+      navigate({ name: 'edit', id });
+      break;
+    case 'delete-event':
+      void deleteEvent(id);
+      break;
+    case 'guest-opt-out':
+      void setConsent(id, false);
+      break;
+    case 'forget-guest':
+      void forgetGuest(id);
+      break;
+    case 'forget-everything':
+      void forgetEverything();
       break;
     case 'copy-link':
       void copyToClipboard(target, inviteUrl(id));
@@ -502,6 +570,72 @@ document.addEventListener('click', (e) => {
   }
 });
 
+async function deleteEvent(eventId: string): Promise<void> {
+  const ev = state.event ?? state.events.find((e) => e.id === eventId);
+  if (!ev) return;
+  const ok = window.confirm(
+    `Apagar "${ev.title}"? Some o convite, a lista de confirmados e o álbum. Não dá pra desfazer.`,
+  );
+  if (!ok) return;
+  try {
+    await data.deleteEvent(eventId);
+    fireToast('Rolê apagado.');
+    navigate({ name: 'home' });
+  } catch (err) {
+    state.error = messageOf(err);
+    render();
+  }
+}
+
+async function setConsent(guestId: string, waOptIn: boolean): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  await withBusy(() => data.setGuestConsent(ev.id, guestId, waOptIn));
+  fireToast(waOptIn ? 'Avisos religados.' : 'Pessoa descadastrada do WhatsApp.');
+}
+
+async function forgetGuest(guestId: string): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  const guest = ev.guests.find((g) => g.id === guestId);
+  const ok = window.confirm(
+    `Apagar os dados de ${guest?.name ?? 'convidado'} deste rolê? Some a resposta, o telefone e os votos.`,
+  );
+  if (!ok) return;
+  await withBusy(() => data.deleteGuest(ev.id, guestId));
+  if (guest && sameName(guest.name, state.myName)) {
+    forgetGuestToken(ev.id);
+    state.myName = '';
+    setMyName('');
+  }
+  fireToast('Dados apagados.');
+}
+
+async function forgetEverything(): Promise<void> {
+  const records = allRememberedGuestRecords();
+  if (!records.length) {
+    fireToast('Este aparelho não tem nenhuma resposta registrada.');
+    return;
+  }
+  const ok = window.confirm(
+    `Apagar sua resposta, telefone e votos de ${records.length} ${records.length === 1 ? 'rolê' : 'rolês'}?`,
+  );
+  if (!ok) return;
+  state.error = null;
+  for (const { eventId, guestId } of records) {
+    try {
+      await data.deleteGuest(eventId, guestId);
+    } catch (err) {
+      console.warn('[galera] falha ao apagar convidado', eventId, err);
+    }
+    forgetGuestToken(eventId);
+  }
+  state.myName = '';
+  setMyName('');
+  fireToast('Seus dados foram apagados.');
+  render();
+}
+
 async function copyToClipboard(target: HTMLElement, url: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(url);
@@ -553,9 +687,18 @@ async function submitRsvp(status: RsvpStatus): Promise<void> {
   state.myName = name;
   setMyName(name);
   fireStamp(status);
-  await withBusy(() =>
-    data.rsvp(ev.id, { name, status, phone, waOptIn, linkCode: state.linkCode }),
-  );
+  await withBusy(async () => {
+    const result = await data.rsvp(ev.id, {
+      name,
+      status,
+      phone,
+      waOptIn,
+      linkCode: state.linkCode,
+      token: guestTokenFor(ev.id),
+    });
+    rememberGuestToken(ev.id, result.token, result.guestId);
+    track('rsvp', { status }, ev.id);
+  });
 }
 
 async function submitVote(pollId: string | null, optionId: string | null): Promise<void> {
@@ -607,15 +750,24 @@ document.addEventListener('submit', (e) => {
     e.preventDefault();
     const input = readCreateForm();
     if (!input) return;
+    const editingId = state.route.name === 'edit' ? state.route.id : null;
     void (async () => {
       state.busy = true;
       state.error = null;
       render();
       try {
-        const created = await data.createEvent(input);
-        addKnownEvent(created.id);
-        state.busy = false;
-        navigate({ name: 'event', id: created.id, code: null });
+        if (editingId) {
+          await data.updateEvent(editingId, input);
+          state.busy = false;
+          fireToast('Convite atualizado ✏️');
+          navigate({ name: 'event', id: editingId, code: null });
+        } else {
+          const created = await data.createEvent(input);
+          addKnownEvent(created.id);
+          track('role_criado', { comIngresso: (input.ticketPrice ?? 0) > 0, produtora: !!input.orgId });
+          state.busy = false;
+          navigate({ name: 'event', id: created.id, code: null });
+        }
       } catch (err) {
         state.busy = false;
         state.error = messageOf(err);
@@ -746,11 +898,20 @@ onRouteChange((route) => void loadRoute(route));
 
 async function boot(): Promise<void> {
   state.backend = data.kind;
+  initAnalytics(data);
+  installErrorReporting();
   try {
     await data.init();
   } catch (err) {
     state.error = messageOf(err);
   }
+  track('app_aberto', { backend: data.kind });
+
+  // ?src=recap na URL prova que a instalação veio de um Recap compartilhado —
+  // é a métrica que fecha o K-factor (docs/business-plan.md, seção 11)
+  const src = new URLSearchParams(location.search).get('src');
+  if (src) track('convite_aberto_via_recap', { src });
+
   await loadRoute(parseRoute());
 }
 

@@ -157,6 +157,26 @@ export interface RsvpInput {
   phone?: string | null;
   waOptIn?: boolean;
   linkCode?: string | null;
+  /**
+   * Prova de que quem responde é dono daquele nome. Emitido na primeira
+   * resposta e guardado no aparelho — sem ele, qualquer um com o link
+   * alteraria o RSVP alheio digitando o nome da pessoa.
+   */
+  token?: string | null;
+}
+
+export interface RsvpResult {
+  guestId: string;
+  /** Guardar no aparelho: é o que autoriza alterar a resposta depois. */
+  token: string;
+}
+
+/** Lançado quando o nome já pertence a outra pessoa neste rolê. */
+export class NameTakenError extends Error {
+  constructor(public readonly name: string) {
+    super(`Já tem outra pessoa como "${name}" neste rolê. Adicione seu sobrenome pra diferenciar.`);
+    this.name = 'NameTakenError';
+  }
 }
 
 /**
@@ -170,7 +190,13 @@ export interface DataAdapter {
   listEvents(): Promise<EventRecord[]>;
   getEvent(id: string): Promise<EventRecord | null>;
   createEvent(input: NewEventInput): Promise<EventRecord>;
-  rsvp(eventId: string, input: RsvpInput): Promise<void>;
+  updateEvent(eventId: string, patch: Partial<NewEventInput>): Promise<void>;
+  deleteEvent(eventId: string): Promise<void>;
+  rsvp(eventId: string, input: RsvpInput): Promise<RsvpResult>;
+  /** Liga/desliga o consentimento de WhatsApp (o "SAIR" do convidado). */
+  setGuestConsent(eventId: string, guestId: string, waOptIn: boolean): Promise<void>;
+  /** Direito de exclusão (LGPD art. 18): apaga o convidado e tudo dele. */
+  deleteGuest(eventId: string, guestId: string): Promise<void>;
   addMuralPost(eventId: string, text: string): Promise<void>;
   createPoll(eventId: string, question: string, options: string[]): Promise<void>;
   votePoll(eventId: string, pollId: string, optionId: string, voterName: string): Promise<void>;
@@ -212,4 +238,11 @@ export interface DataAdapter {
   markMessageSent(messageId: string): Promise<void>;
   /** Esvazia a fila de um rolê (recomeçar uma campanha). */
   clearOutbox(eventId: string): Promise<void>;
+
+  /* ---------- instrumentação do loop de crescimento ---------- */
+
+  /** Grava um evento de produto. Nunca deve lançar de um jeito que trave a UI. */
+  trackEvent(name: string, props: Record<string, unknown>, eventId: string | null): Promise<void>;
+  /** Contagem por nome de evento, só dos rolês deste anfitrião (host-only). */
+  getFunnelStats(): Promise<Record<string, number>>;
 }

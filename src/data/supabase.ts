@@ -11,12 +11,15 @@ import type {
   Poll,
   Promoter,
   RsvpInput,
+  RsvpResult,
   RsvpStatus,
   ThemeColor,
 } from '../types';
+import { NameTakenError } from '../types';
 import { avatarColor, uid } from '../lib/format';
 import { downscaleImage } from '../lib/image';
 import { addKnownEvent, knownEventIds } from './known';
+import { guestTokenFor } from './identity';
 
 const PHOTO_BUCKET = 'event-photos';
 
@@ -286,38 +289,67 @@ export class SupabaseAdapter implements DataAdapter {
     return created;
   }
 
-  async rsvp(eventId: string, input: RsvpInput): Promise<void> {
-    // `name_key` é gerado no banco a partir do nome; o índice único dele faz o upsert.
+  async rsvp(eventId: string, input: RsvpInput): Promise<RsvpResult> {
+    // Tudo pela RPC: as policies de escrita direta em `guests` foram removidas
+    // na migration 0003 justamente pra forçar a checagem de token aqui dentro.
     const { data, error } = await this.sb
-      .from('guests')
-      .upsert(
-        {
-          event_id: eventId,
-          name: input.name,
-          status: input.status,
-          link_code: input.linkCode ?? null,
-        },
-        { onConflict: 'event_id,name_key' },
-      )
-      .select('id')
+      .rpc('rsvp_upsert', {
+        target_event: eventId,
+        guest_name: input.name,
+        guest_status: input.status,
+        guest_phone: input.phone ?? null,
+        opt_in: !!input.waOptIn,
+        link_code: input.linkCode ?? null,
+        token: input.token ?? null,
+      })
       .single();
+    if (error) {
+      if (/name_taken/.test(error.message)) throw new NameTakenError(input.name);
+      throw new Error(error.message);
+    }
+    const row = data as { guest_id: string; guest_token: string };
+    return { guestId: row.guest_id, token: row.guest_token };
+  }
+
+  async updateEvent(eventId: string, patch: Partial<NewEventInput>): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (patch.emoji !== undefined) row.emoji = patch.emoji;
+    if (patch.title !== undefined) row.title = patch.title;
+    if (patch.date !== undefined) row.date = patch.date;
+    if (patch.time !== undefined) row.time = patch.time;
+    if (patch.location !== undefined) row.location = patch.location;
+    if (patch.description !== undefined) row.description = patch.description;
+    if (patch.color !== undefined) row.color = patch.color;
+    if (patch.pix !== undefined) row.pix = patch.pix;
+    if (patch.orgId !== undefined) row.org_id = patch.orgId;
+    if (patch.ticketPrice !== undefined) row.ticket_price = patch.ticketPrice;
+    if (patch.capacity !== undefined) row.capacity = patch.capacity;
+    const { error } = await this.sb.from('events').update(row).eq('id', eventId);
     if (error) throw new Error(error.message);
+  }
 
-    const wantsContact = input.phone || input.waOptIn !== undefined;
-    if (!wantsContact) return;
+  async deleteEvent(eventId: string): Promise<void> {
+    const { error } = await this.sb.from('events').delete().eq('id', eventId);
+    if (error) throw new Error(error.message);
+  }
 
-    const { error: contactError } = await this.sb.from('guest_contacts').upsert(
-      {
-        guest_id: data.id,
-        event_id: eventId,
-        phone: input.phone ?? null,
-        wa_opt_in: !!input.waOptIn,
-        wa_opt_in_at: input.waOptIn ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'guest_id' },
-    );
-    if (contactError) throw new Error(contactError.message);
+  async setGuestConsent(eventId: string, guestId: string, waOptIn: boolean): Promise<void> {
+    const { error } = await this.sb.rpc('set_guest_consent', {
+      target_event: eventId,
+      target_guest: guestId,
+      opt_in: waOptIn,
+      token: guestTokenFor(eventId),
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async deleteGuest(eventId: string, guestId: string): Promise<void> {
+    const { error } = await this.sb.rpc('forget_guest', {
+      target_event: eventId,
+      target_guest: guestId,
+      token: guestTokenFor(eventId),
+    });
+    if (error) throw new Error(error.message);
   }
 
   async addMuralPost(eventId: string, text: string): Promise<void> {
@@ -548,5 +580,23 @@ export class SupabaseAdapter implements DataAdapter {
   async clearOutbox(eventId: string): Promise<void> {
     const { error } = await this.sb.from('outbox_messages').delete().eq('event_id', eventId);
     if (error) throw new Error(error.message);
+  }
+
+  /* ---------- instrumentação ---------- */
+
+  async trackEvent(name: string, props: Record<string, unknown>, eventId: string | null): Promise<void> {
+    const { error } = await this.sb.from('product_events').insert({ name, props, event_id: eventId });
+    // Nunca deixa a interface travar por causa de analytics.
+    if (error) console.warn('[galera] trackEvent:', error.message);
+  }
+
+  async getFunnelStats(): Promise<Record<string, number>> {
+    const { data, error } = await this.sb.from('product_events').select('name');
+    if (error) throw new Error(error.message);
+    const stats: Record<string, number> = {};
+    for (const row of data as { name: string }[]) {
+      stats[row.name] = (stats[row.name] ?? 0) + 1;
+    }
+    return stats;
   }
 }

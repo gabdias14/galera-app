@@ -9,7 +9,9 @@ import type {
   OutboxMessage,
   Promoter,
   RsvpInput,
+  RsvpResult,
 } from '../types';
+import { NameTakenError } from '../types';
 import { avatarColor, sameName, shortCode, uid } from '../lib/format';
 import { downscaleImage } from '../lib/image';
 import { deviceId } from './identity';
@@ -17,7 +19,7 @@ import { seedDb } from './seed';
 
 const DB_KEY = 'galera.db.v2';
 
-type StoredGuest = Omit<Guest, 'color'>;
+type StoredGuest = Omit<Guest, 'color'> & { token?: string | null };
 
 export interface StoredEvent extends Omit<EventRecord, 'isHost' | 'guests'> {
   hostId: string;
@@ -28,11 +30,20 @@ export interface StoredOrg extends Org {
   ownerId: string;
 }
 
+interface StoredProductEvent {
+  id: string;
+  name: string;
+  props: Record<string, unknown>;
+  eventId: string | null;
+  createdAt: string;
+}
+
 export interface Db {
   events: StoredEvent[];
   orgs: StoredOrg[];
   promoters: Promoter[];
   outbox: OutboxMessage[];
+  analytics: StoredProductEvent[];
 }
 
 export class QuotaError extends Error {
@@ -52,6 +63,7 @@ function readDb(): Db {
         orgs: parsed.orgs ?? [],
         promoters: parsed.promoters ?? [],
         outbox: parsed.outbox ?? [],
+        analytics: parsed.analytics ?? [],
       };
     }
   } catch {
@@ -76,7 +88,7 @@ function hydrate(ev: StoredEvent, myId: string): EventRecord {
   return {
     ...rest,
     isHost: hostId === myId,
-    guests: ev.guests.map((g) => ({ ...g, color: avatarColor(g.name) })),
+    guests: ev.guests.map(({ token: _token, ...g }) => ({ ...g, color: avatarColor(g.name) })),
   };
 }
 
@@ -142,10 +154,15 @@ export class LocalAdapter implements DataAdapter {
     return hydrate(ev, deviceId());
   }
 
-  async rsvp(eventId: string, input: RsvpInput): Promise<void> {
-    mutateEvent(eventId, (ev) => {
+  async rsvp(eventId: string, input: RsvpInput): Promise<RsvpResult> {
+    return mutateEvent(eventId, (ev) => {
       const existing = ev.guests.find((g) => sameName(g.name, input.name));
       if (existing) {
+        // Nome já usado por outra pessoa: só passa quem tem o token dele.
+        // É o mesmo mecanismo que impede sabotagem e que resolve homônimo.
+        if (existing.token && existing.token !== input.token) throw new NameTakenError(input.name);
+        const token = existing.token ?? input.token ?? uid();
+        existing.token = token;
         existing.status = input.status;
         existing.name = input.name;
         if (input.phone !== undefined && input.phone !== null) existing.phone = input.phone;
@@ -154,9 +171,9 @@ export class LocalAdapter implements DataAdapter {
           existing.waOptInAt = input.waOptIn ? new Date().toISOString() : null;
         }
         if (input.linkCode && !existing.linkCode) existing.linkCode = input.linkCode;
-        return;
+        return { guestId: existing.id, token };
       }
-      ev.guests.push({
+      const guest = {
         id: uid(),
         name: input.name,
         status: input.status,
@@ -166,7 +183,51 @@ export class LocalAdapter implements DataAdapter {
         linkCode: input.linkCode ?? null,
         checkedInAt: null,
         amountPaid: 0,
-      });
+        token: input.token ?? uid(),
+      };
+      ev.guests.push(guest);
+      return { guestId: guest.id, token: guest.token as string };
+    });
+  }
+
+  async updateEvent(eventId: string, patch: Partial<NewEventInput>): Promise<void> {
+    mutateEvent(eventId, (ev) => {
+      Object.assign(ev, patch);
+    });
+  }
+
+  async deleteEvent(eventId: string): Promise<void> {
+    mutate((db) => {
+      db.events = db.events.filter((e) => e.id !== eventId);
+      db.outbox = db.outbox.filter((m) => m.eventId !== eventId);
+    });
+  }
+
+  async setGuestConsent(eventId: string, guestId: string, waOptIn: boolean): Promise<void> {
+    mutateEvent(eventId, (ev) => {
+      const guest = ev.guests.find((g) => g.id === guestId);
+      if (!guest) return;
+      guest.waOptIn = waOptIn;
+      guest.waOptInAt = waOptIn ? new Date().toISOString() : null;
+      if (!waOptIn) guest.phone = null;
+    });
+  }
+
+  async deleteGuest(eventId: string, guestId: string): Promise<void> {
+    mutate((db) => {
+      const ev = db.events.find((e) => e.id === eventId);
+      if (!ev) return;
+      const guest = ev.guests.find((g) => g.id === guestId);
+      ev.guests = ev.guests.filter((g) => g.id !== guestId);
+      if (guest) {
+        // some também da fila de mensagens e dos votos
+        db.outbox = db.outbox.filter((m) => !(m.eventId === eventId && m.toName === guest.name));
+        ev.polls.forEach((poll) => {
+          Object.keys(poll.votes).forEach((k) => {
+            poll.votes[k] = poll.votes[k].filter((n) => !sameName(n, guest.name));
+          });
+        });
+      }
     });
   }
 
@@ -366,5 +427,26 @@ export class LocalAdapter implements DataAdapter {
     mutate((db) => {
       db.outbox = db.outbox.filter((m) => m.eventId !== eventId);
     });
+  }
+
+  /* ---------- instrumentação ---------- */
+
+  async trackEvent(name: string, props: Record<string, unknown>, eventId: string | null): Promise<void> {
+    mutate((db) => {
+      db.analytics.push({ id: uid(), name, props, eventId, createdAt: new Date().toISOString() });
+      // cap simples: modo local não precisa reter histórico ilimitado
+      if (db.analytics.length > 2000) db.analytics = db.analytics.slice(-2000);
+    });
+  }
+
+  async getFunnelStats(): Promise<Record<string, number>> {
+    const me = deviceId();
+    const myEventIds = new Set(readDb().events.filter((e) => e.hostId === me).map((e) => e.id));
+    const stats: Record<string, number> = {};
+    for (const row of readDb().analytics) {
+      if (row.eventId && !myEventIds.has(row.eventId)) continue;
+      stats[row.name] = (stats[row.name] ?? 0) + 1;
+    }
+    return stats;
   }
 }

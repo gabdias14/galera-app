@@ -8,3 +8,7 @@ dist/
 # Capacitor (gerados por `npx cap add ios/android`)
 ios/
 android/
+
+# saída dos testes do Playwright
+test-results/
+playwright-report/

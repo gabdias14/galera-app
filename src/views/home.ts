@@ -54,6 +54,9 @@ export function renderHome(): string {
     '<p>Crie um convite bonito em minutos, compartilhe no WhatsApp e acompanhe quem confirmou — tudo num só lugar.</p>' +
     '</div>' +
     '<div class="section-label">Seus rolês</div>' +
-    board
+    board +
+    '<div style="text-align:center; margin-top:40px;">' +
+    '<button class="link-btn" style="color:var(--muted-2);" data-action="go-privacy">privacidade e seus dados</button>' +
+    '</div>'
   );
 }

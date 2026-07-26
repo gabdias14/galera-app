@@ -36,6 +36,7 @@ function shareRowHtml(ev: EventRecord): string {
     `<button class="share-btn share-btn--copy" data-action="copy-link" data-id="${ev.id}">🔗 Copiar link do convite</button>` +
     '<button class="share-btn share-btn--recap" data-action="open-recap">✨ Gerar recap</button>' +
     `<button class="share-btn share-btn--copy" data-action="open-door" data-id="${ev.id}">🚪 Portaria</button>` +
+    `<button class="share-btn share-btn--copy" data-action="edit-event" data-id="${ev.id}">✏️ Editar</button>` +
     '</div>'
   );
 }
@@ -88,10 +89,19 @@ function guestGroupHtml(ev: EventRecord, status: RsvpStatus, label: string, colo
   const list = ev.guests.filter((g) => g.status === status);
   const rows = list.length
     ? list
-        .map(
-          (g) =>
-            `<div class="guest-row"><div class="avatar" style="background:${g.color}">${initials(g.name)}</div><div class="guest-name">${escapeHtml(g.name)}</div></div>`,
-        )
+        .map((g) => {
+          const waTag = g.waOptIn
+            ? `<button class="link-btn" style="font-size:.75rem;" data-action="guest-opt-out" data-id="${g.id}" title="Desligar avisos de WhatsApp">📲 desligar</button>`
+            : '';
+          return (
+            '<div class="guest-row">' +
+            `<div class="avatar" style="background:${g.color}">${initials(g.name)}</div>` +
+            `<div class="guest-name" style="flex:1;">${escapeHtml(g.name)}</div>` +
+            waTag +
+            `<button class="link-btn" style="font-size:.75rem; color:var(--coral-dark);" data-action="forget-guest" data-id="${g.id}" title="Apagar os dados desta pessoa">apagar</button>` +
+            '</div>'
+          );
+        })
         .join('')
     : '<div class="empty-note">Ninguém por aqui ainda.</div>';
   return (

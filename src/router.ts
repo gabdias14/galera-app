@@ -4,7 +4,9 @@ export type Route =
   | { name: 'home' }
   | { name: 'create' }
   | { name: 'event'; id: string; code: string | null }
+  | { name: 'edit'; id: string }
   | { name: 'door'; id: string }
+  | { name: 'privacidade' }
   | { name: 'pro'; tab: ProTab };
 
 const PRO_TABS: ProTab[] = ['painel', 'publico', 'promoters'];
@@ -22,10 +24,12 @@ export function parseRoute(hash: string = location.hash): Route {
 
   if (parts[0] === 'e' && parts[1]) {
     if (parts[2] === 'portaria') return { name: 'door', id: parts[1] };
+    if (parts[2] === 'editar') return { name: 'edit', id: parts[1] };
     if (parts[2] === 'c' && parts[3]) return { name: 'event', id: parts[1], code: parts[3].toUpperCase() };
     return { name: 'event', id: parts[1], code: null };
   }
   if (parts[0] === 'novo') return { name: 'create' };
+  if (parts[0] === 'privacidade') return { name: 'privacidade' };
   if (parts[0] === 'pro') {
     const tab = PRO_TABS.find((t) => t === parts[1]) ?? 'painel';
     return { name: 'pro', tab };
@@ -39,6 +43,8 @@ export function routeToHash(route: Route): string {
     return route.code ? `${base}/c/${encodeURIComponent(route.code)}` : base;
   }
   if (route.name === 'door') return `#/e/${encodeURIComponent(route.id)}/portaria`;
+  if (route.name === 'edit') return `#/e/${encodeURIComponent(route.id)}/editar`;
+  if (route.name === 'privacidade') return '#/privacidade';
   if (route.name === 'create') return '#/novo';
   if (route.name === 'pro') return `#/pro/${route.tab}`;
   return '#/';
@@ -54,12 +60,19 @@ export function onRouteChange(cb: (route: Route) => void): void {
   window.addEventListener('hashchange', () => cb(parseRoute()));
 }
 
-/** Link público do convite, pronto pra colar no WhatsApp. */
-export function inviteUrl(eventId: string, code?: string | null): string {
+/**
+ * Link público do convite, pronto pra colar no WhatsApp.
+ *
+ * `src` vira query string (antes do hash, já que a rota é hash-based) — é o
+ * que permite provar, quando o link é aberto, que a instalação veio de um
+ * Recap compartilhado e não de outro canal (fecha o K-factor do #7).
+ */
+export function inviteUrl(eventId: string, code?: string | null, src?: string): string {
   const base = import.meta.env.VITE_PUBLIC_URL || `${location.origin}${location.pathname}`;
   const clean = base.replace(/\/$/, '');
   const path = code
     ? `/e/${encodeURIComponent(eventId)}/c/${encodeURIComponent(code)}`
     : `/e/${encodeURIComponent(eventId)}`;
-  return `${clean}/#${path}`;
+  const query = src ? `?src=${encodeURIComponent(src)}` : '';
+  return `${clean}/${query}#${path}`;
 }

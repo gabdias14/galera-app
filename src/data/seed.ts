@@ -441,5 +441,6 @@ export function seedDb(hostId: string): Db {
     orgs: [pro.org],
     promoters: pro.promoters,
     outbox: [],
+    analytics: [],
   };
 }
