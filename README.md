@@ -55,7 +55,7 @@ src/
   views/                # home, criação, evento, Galera Pro e portaria
   styles/main.css       # sistema visual (vermelho + papel, carimbo, ticket)
 supabase/migrations/    # schema + RLS + storage (0001) e camada Pro (0002)
-docs/                   # backend, B2B, WhatsApp, mobile e o brief do produto
+docs/                   # backend, B2B, WhatsApp, mobile, brief e os planos de negócio
 legacy/                 # protótipo single-file original, pra referência
 ```
 
@@ -106,6 +106,12 @@ O caminho pra API oficial, os templates e o custo estão em [docs/whatsapp.md](d
 | 2 | Empacotar com Capacitor | ⏳ configurado, falta rodar num iPhone ([docs/mobile.md](docs/mobile.md)) |
 | 3 | TestFlight | ⏳ |
 | 4 | Submissão na App Store | ⏳ |
+
+## Planejamento
+
+- [docs/melhorias.md](docs/melhorias.md) — backlog priorizado (P0 a P3) do estado real do código
+- [docs/business-plan.md](docs/business-plan.md) — modelo de receita, unit economics, concorrência e riscos
+- [docs/marketing-plan.md](docs/marketing-plan.md) — plano de 90 dias, canais e redes sociais
 
 O que ainda **não** existe: push nativo e disparo automático de WhatsApp (hoje a fila é enviada com
 confirmação humana — ver docs/whatsapp.md), login próprio de promoter, campos de preço/lotação/produtora
