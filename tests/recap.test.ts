@@ -1,33 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { buildRecapData, recapFileName } from '../src/lib/recap';
+import { makeEvent as baseEvent, makeGuest } from './fixtures';
 import type { EventRecord } from '../src/types';
 
 const NOW = new Date(2026, 6, 26);
 
 function makeEvent(overrides: Partial<EventRecord> = {}): EventRecord {
-  return {
-    id: 'e1',
-    emoji: '🍖',
-    title: 'Churrasco do Gabriel',
-    date: '2026-08-14',
-    time: '13:00',
-    location: 'Vila Madalena, SP',
-    description: '',
-    color: 'coral',
-    pix: '',
-    createdAt: '2026-07-01T12:00:00.000Z',
-    isHost: true,
+  return baseEvent({
     guests: [
-      { id: 'g1', name: 'Marina Costa', status: 'vou', color: '#fff' },
-      { id: 'g2', name: 'Lucas Andrade', status: 'vou', color: '#fff' },
-      { id: 'g3', name: 'João Pedro', status: 'talvez', color: '#fff' },
-      { id: 'g4', name: 'Aline Rocha', status: 'nao', color: '#fff' },
+      makeGuest('Marina Costa', 'vou'),
+      makeGuest('Lucas Andrade', 'vou'),
+      makeGuest('João Pedro', 'talvez'),
+      makeGuest('Aline Rocha', 'nao'),
     ],
-    mural: [],
-    polls: [],
-    photos: [],
     ...overrides,
-  };
+  });
 }
 
 describe('buildRecapData', () => {
@@ -93,12 +80,7 @@ describe('buildRecapData', () => {
   });
 
   it('limita o mosaico a 12 avatares e 6 fotos, sem placeholders', () => {
-    const guests = Array.from({ length: 20 }, (_, i) => ({
-      id: `g${i}`,
-      name: `Pessoa ${i}`,
-      status: 'vou' as const,
-      color: '#fff',
-    }));
+    const guests = Array.from({ length: 20 }, (_, i) => makeGuest(`Pessoa ${i}`, 'vou'));
     const photos = Array.from({ length: 9 }, (_, i) => ({
       id: `p${i}`,
       url: i < 8 ? `https://cdn/${i}.jpg` : null,

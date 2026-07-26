@@ -1,8 +1,9 @@
-import type { EventRecord, ThemeColor } from './types';
-import type { Route } from './router';
+import type { EventRecord, Org, OutboxMessage, Promoter, ThemeColor } from './types';
+import type { ProTab, Route } from './router';
+import type { AudienceFilter, ScoredContact } from './lib/audience';
 import { getMyName } from './data/identity';
 
-export type EventTab = 'convite' | 'convidados' | 'enquete' | 'mural' | 'album';
+export type EventTab = 'convite' | 'convidados' | 'enquete' | 'mural' | 'album' | 'links';
 
 export interface AppState {
   route: Route;
@@ -14,6 +15,8 @@ export interface AppState {
   events: EventRecord[];
   /** Rolê aberto no momento. */
   event: EventRecord | null;
+  /** Código do link de convidado pelo qual a pessoa chegou (atribuição). */
+  linkCode: string | null;
   /** Ver como convidado (o anfitrião pode alternar; quem não é host fica sempre aqui). */
   guestMode: boolean;
   eventTab: EventTab;
@@ -25,6 +28,24 @@ export interface AppState {
   recapLoading: boolean;
   recapUrl: string | null;
   busy: boolean;
+
+  /* ---------- Galera Pro ---------- */
+  proTab: ProTab;
+  orgs: Org[];
+  orgId: string | null;
+  orgEvents: EventRecord[];
+  promoters: Promoter[];
+  /** Base de contatos já pontuada. */
+  audience: ScoredContact[];
+  audienceFilter: AudienceFilter;
+  campaignEventId: string | null;
+  campaignPromoterId: string | null;
+  /** Fila de mensagens do rolê aberto (ou do alvo da campanha). */
+  outbox: OutboxMessage[];
+
+  /* ---------- portaria ---------- */
+  doorSearch: string;
+  doorAmount: number | null;
 }
 
 export const COLORS: Record<ThemeColor, { tint: string; accent: string }> = {
@@ -43,6 +64,7 @@ export const state: AppState = {
   backend: 'local',
   events: [],
   event: null,
+  linkCode: null,
   guestMode: false,
   eventTab: 'convite',
   myName: getMyName(),
@@ -52,4 +74,18 @@ export const state: AppState = {
   recapLoading: false,
   recapUrl: null,
   busy: false,
+
+  proTab: 'painel',
+  orgs: [],
+  orgId: null,
+  orgEvents: [],
+  promoters: [],
+  audience: [],
+  audienceFilter: { size: 50 },
+  campaignEventId: null,
+  campaignPromoterId: null,
+  outbox: [],
+
+  doorSearch: '',
+  doorAmount: null,
 };

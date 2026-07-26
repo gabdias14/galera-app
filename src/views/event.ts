@@ -14,6 +14,8 @@ import {
   pollResultsHtml,
   pollVoteHtml,
   recapModalHtml,
+  linksSectionHtml,
+  remindersPanelHtml,
 } from './components';
 
 function topbarHtml(ev: EventRecord): string {
@@ -33,6 +35,7 @@ function shareRowHtml(ev: EventRecord): string {
     `<a class="share-btn share-btn--wa" href="https://wa.me/?text=${text}" target="_blank" rel="noopener">📲 Compartilhar no WhatsApp</a>` +
     `<button class="share-btn share-btn--copy" data-action="copy-link" data-id="${ev.id}">🔗 Copiar link do convite</button>` +
     '<button class="share-btn share-btn--recap" data-action="open-recap">✨ Gerar recap</button>' +
+    `<button class="share-btn share-btn--copy" data-action="open-door" data-id="${ev.id}">🚪 Portaria</button>` +
     '</div>'
   );
 }
@@ -115,11 +118,14 @@ export function renderHostView(ev: EventRecord): string {
     tab('enquete', `Enquetes${ev.polls.length ? ` (${ev.polls.length})` : ''}`) +
     tab('mural', 'Mural') +
     tab('album', 'Álbum') +
+    tab('links', `Links${ev.links.length ? ` (${ev.links.length})` : ''}`) +
     '</div>';
 
   let body = '';
   if (state.eventTab === 'convite') {
-    body = `<div style="max-width:640px;">${inviteCardHtml(ev, { showRsvp: false })}${shareRowHtml(ev)}</div>`;
+    body =
+      `<div style="max-width:640px;">${inviteCardHtml(ev, { showRsvp: false })}${shareRowHtml(ev)}` +
+      `<div style="margin-top:22px;">${remindersPanelHtml(ev)}</div></div>`;
   } else if (state.eventTab === 'convidados') {
     body =
       '<div class="stat-row">' +
@@ -158,6 +164,8 @@ export function renderHostView(ev: EventRecord): string {
       (ev.mural.length
         ? ev.mural.map(muralPostHtml).join('')
         : '<div class="empty-note">Nenhum aviso ainda. Poste algo pra sua galera!</div>');
+  } else if (state.eventTab === 'links') {
+    body = linksSectionHtml(ev);
   } else {
     body = albumSectionHtml(ev);
   }

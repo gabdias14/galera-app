@@ -1,6 +1,7 @@
 # Galera 🎈
 
-Convites de rolê com RSVP, enquete, mural, álbum pós-evento e **recap compartilhável** — um "Partiful brasileiro".
+Convites de rolê com RSVP, enquete, mural, álbum pós-evento e **recap compartilhável** — um "Partiful brasileiro" —
+mais o **Galera Pro**, a camada B2B para produtoras, casas e promoters.
 
 > _"O WhatsApp organiza a conversa. O Galera organiza o rolê."_
 
@@ -46,12 +47,15 @@ src/
     date.ts             # datas em pt-BR, "daqui a 3 dias", trava do álbum
     calendar.ts         # .ics e link do Google Agenda
     recap.ts            # gerador do Recap (canvas 1080×1920)
+    audience.ts         # B2B: score de público, tiers, projeção, promoters, portaria
+    messages.ts         # textos de campanha e lembrete de WhatsApp
+    phone.ts            # telefone BR (E.164) e link do WhatsApp
     image.ts            # redimensiona foto antes de subir/guardar
     format.ts           # escapeHtml, avatares, comparação de nomes
-  views/                # home, criação e evento (anfitrião/convidado)
+  views/                # home, criação, evento, Galera Pro e portaria
   styles/main.css       # sistema visual (vermelho + papel, carimbo, ticket)
-supabase/migrations/    # schema + RLS + storage
-docs/                   # backend, mobile e o brief do produto
+supabase/migrations/    # schema + RLS + storage (0001) e camada Pro (0002)
+docs/                   # backend, B2B, WhatsApp, mobile e o brief do produto
 legacy/                 # protótipo single-file original, pra referência
 ```
 
@@ -66,6 +70,29 @@ legacy/                 # protótipo single-file original, pra referência
   é simples e rápido o bastante). O foco e o cursor dos inputs são preservados no redesenho.
 - **A marca no Recap não sai.** É o motor de distribuição, não decoração — ver
   [docs/brief.md](docs/brief.md), seção 5.
+- **A audiência do Pro sai só do dado próprio da produtora** — quem ela convidou, quem apareceu,
+  quanto gastou. Nada de lista comprada. E campanha só vai pra quem deu opt-in explícito.
+
+## Galera Pro (B2B)
+
+Em `#/pro`, para quem faz festa como negócio:
+
+- **Público** — cada pessoa da base ganha um score de 0 a 100 (receita, frequência, comparecimento,
+  recência, indicações) e cai num tier: VIP, Fiel, Promissor, Em risco, Dormente.
+- **Campanha** — escolhe o segmento e o rolê alvo; o app gera link rastreável, escreve mensagem
+  personalizada por pessoa e projeta convites → presenças → receita antes de você mandar.
+- **Links de convidados** — código curto por link (`#/e/<id>/c/<code>`), com aberturas, confirmados,
+  presenças e receita por link.
+- **Promoters** — comissão em % sobre a receita atribuída aos links dele, com conversão por promoter.
+- **Portaria** — check-in por busca de nome, valor cobrado, walk-in e contador ao vivo de lotação e caixa.
+
+Detalhes e a fórmula do score: [docs/b2b.md](docs/b2b.md).
+
+## WhatsApp
+
+Convidado marca "quero lembrete" no RSVP (opt-in explícito, com telefone validado). O anfitrião
+prepara a fila e envia — o app abre o WhatsApp com o texto pronto, sem disparo automático.
+O caminho pra API oficial, os templates e o custo estão em [docs/whatsapp.md](docs/whatsapp.md).
 
 ## Status do roadmap
 
@@ -74,9 +101,13 @@ legacy/                 # protótipo single-file original, pra referência
 | 0 | Protótipo navegável | ✅ |
 | 1 | Backend real (schema, RLS, realtime, storage) | ✅ código pronto — falta criar o projeto no Supabase |
 | 1.5 | Recap do rolê (1080×1920, Web Share) | ✅ |
+| 1.6 | Galera Pro: público, campanha, links, promoters, portaria | ✅ |
+| 1.7 | WhatsApp com opt-in (fila semiautomática) | ✅ — API oficial documentada, não implementada |
 | 2 | Empacotar com Capacitor | ⏳ configurado, falta rodar num iPhone ([docs/mobile.md](docs/mobile.md)) |
 | 3 | TestFlight | ⏳ |
 | 4 | Submissão na App Store | ⏳ |
 
-O que ainda **não** existe: notificação push de verdade (o botão "notificar convidados" marca a enquete
-e avisa o anfitrião), edição/exclusão de rolê pela interface, e legenda nas fotos do álbum.
+O que ainda **não** existe: push nativo e disparo automático de WhatsApp (hoje a fila é enviada com
+confirmação humana — ver docs/whatsapp.md), login próprio de promoter, campos de preço/lotação/produtora
+no formulário de criação (o modelo e o banco já aceitam), edição/exclusão de rolê pela interface e
+legenda nas fotos do álbum.

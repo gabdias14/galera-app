@@ -42,7 +42,10 @@ export function renderHome(): string {
   return (
     '<div class="topbar">' +
     logoHtml() +
+    '<div style="display:flex; gap:10px; align-items:center;">' +
+    '<button class="pro-switch" data-action="go-pro">📊 Galera Pro</button>' +
     '<button class="topbar__cta" data-action="go-create">+ Criar rolê</button>' +
+    '</div>' +
     '</div>' +
     (state.error ? `<div class="error-note">${escapeHtml(state.error)}</div>` : '') +
     '<div class="hero">' +

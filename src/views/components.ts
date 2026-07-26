@@ -59,9 +59,12 @@ export function inviteCardHtml(ev: EventRecord, opts: { showRsvp?: boolean } = {
     if (existing) {
       const label =
         existing.status === 'vou' ? 'Vou! 🎉' : existing.status === 'talvez' ? 'Talvez 🤔' : 'Não vou 😢';
+      const waLine = existing.waOptIn
+        ? '<small>✅ você recebe os avisos no WhatsApp</small>'
+        : '<small>sem avisos no WhatsApp — dá pra ativar em "alterar resposta"</small>';
       rsvpHtml =
         '<div class="rsvp-block"><div class="confirmed-panel">' +
-        `<div class="confirmed-panel__msg">Sua resposta: ${label}<small>${escapeHtml(existing.name)}</small></div>` +
+        `<div class="confirmed-panel__msg">Sua resposta: ${label}<small>${escapeHtml(existing.name)}</small>${waLine}</div>` +
         '<button class="link-btn" data-action="change-rsvp">alterar resposta</button>' +
         '</div></div>';
     } else {
@@ -70,6 +73,13 @@ export function inviteCardHtml(ev: EventRecord, opts: { showRsvp?: boolean } = {
         '<div class="rsvp-title">Você vai?</div>' +
         `<input type="text" class="name-input" id="guestNameInput" placeholder="Seu nome" value="${escapeHtml(state.myName)}" autocomplete="name">` +
         '<div class="name-error" id="rsvpError" style="display:none;">Digite seu nome antes de responder 🙂</div>' +
+        '<input type="tel" class="name-input" id="guestPhoneInput" placeholder="WhatsApp (opcional) — (11) 99999-0000" autocomplete="tel">' +
+        '<div class="name-error" id="phoneError" style="display:none;">Esse número não parece um WhatsApp brasileiro 🤔</div>' +
+        '<div class="optin">' +
+        '<input type="checkbox" id="guestWaOptIn">' +
+        '<label for="guestWaOptIn">Quero receber lembrete do rolê no WhatsApp' +
+        '<small>Só avisos deste rolê e dos próximos de quem organiza. Você pode sair quando quiser.</small></label>' +
+        '</div>' +
         '<div class="rsvp-btns">' +
         '<button class="rsvp-btn rsvp-btn--vou" data-action="rsvp" data-status="vou">Vou! 🎉</button>' +
         '<button class="rsvp-btn rsvp-btn--talvez" data-action="rsvp" data-status="talvez">Talvez</button>' +
@@ -228,6 +238,87 @@ export function recapModalHtml(): string {
     '<div class="recap-modal" data-action="close-recap">' +
     '<button class="lightbox__close" data-action="close-recap" aria-label="Fechar">✕</button>' +
     `<div class="recap-modal__inner" data-action="noop">${body}</div>` +
+    '</div>'
+  );
+}
+
+/* ===================== links de convidados (B2B) ===================== */
+
+export function linksSectionHtml(ev: EventRecord): string {
+  const promoterOptions =
+    '<option value="">Lista da casa</option>' +
+    state.promoters
+      .filter((p) => p.active)
+      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
+      .join('');
+
+  const confirmedByCode = new Map<string, number>();
+  const presentByCode = new Map<string, number>();
+  for (const g of ev.guests) {
+    if (!g.linkCode) continue;
+    if (g.status === 'vou') confirmedByCode.set(g.linkCode, (confirmedByCode.get(g.linkCode) ?? 0) + 1);
+    if (g.checkedInAt) presentByCode.set(g.linkCode, (presentByCode.get(g.linkCode) ?? 0) + 1);
+  }
+
+  const rows = ev.links
+    .map((link) => {
+      const confirmed = confirmedByCode.get(link.code) ?? 0;
+      const present = presentByCode.get(link.code) ?? 0;
+      const limit = link.maxUses ? ` · limite ${link.maxUses}` : '';
+      return (
+        '<div class="link-row">' +
+        `<div><div class="link-code">${link.code}</div></div>` +
+        '<div style="flex:1; min-width:150px;">' +
+        `<div style="font-weight:700; font-size:.92rem;">${escapeHtml(link.label || 'Link')}</div>` +
+        `<div class="link-meta">${link.opens} aberturas · ${confirmed} confirmados · ${present} presenças${limit}</div>` +
+        '</div>' +
+        '<div class="link-actions">' +
+        `<button data-action="copy-guest-link" data-id="${ev.id}" data-code="${link.code}">Copiar</button>` +
+        `<button data-action="share-guest-link" data-id="${ev.id}" data-code="${link.code}">WhatsApp</button>` +
+        '</div></div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div class="pro-panel">' +
+    '<h3>Novo link de convidado</h3>' +
+    '<div class="helptext">Cada link tem um código próprio. Quem confirma por ele fica creditado a quem distribuiu — ' +
+    'é o que alimenta a comissão do promoter e a portaria.</div>' +
+    '<form class="pro-form-row" id="linkForm">' +
+    '<div class="pro-field"><label>Nome do link</label><input class="pro-input" id="linkLabel" placeholder="Ex: Lista Bibi / Aniversariante" required></div>' +
+    `<div class="pro-field"><label>Creditar a</label><select class="pro-input" id="linkPromoter">${promoterOptions}</select></div>` +
+    '<div class="pro-field" style="max-width:130px;"><label>Limite</label><input class="pro-input" id="linkMax" type="number" min="1" placeholder="sem limite"></div>' +
+    '<button class="pro-btn pro-btn--go" type="submit">Gerar link</button>' +
+    '</form></div>' +
+    (rows || '<div class="empty-note">Nenhum link ainda. Gere o primeiro pra começar a rastrear quem traz quem.</div>')
+  );
+}
+
+/* ===================== lembretes por WhatsApp (B2C) ===================== */
+
+export function remindersPanelHtml(ev: EventRecord): string {
+  const optIn = ev.guests.filter((g) => g.waOptIn && g.phone);
+  const pending = state.outbox.filter((m) => m.kind === 'lembrete' && m.status === 'pendente');
+
+  if (!optIn.length && !pending.length) {
+    return (
+      '<div class="pro-panel">' +
+      '<h3>Lembrete no WhatsApp</h3>' +
+      '<div class="helptext">Ninguém autorizou WhatsApp ainda. Quem confirmar presença pode marcar a caixinha ' +
+      '"quero receber lembrete" — só aí o número aparece aqui.</div>' +
+      '</div>'
+    );
+  }
+
+  return (
+    '<div class="pro-panel">' +
+    '<h3>Lembrete no WhatsApp</h3>' +
+    `<div class="helptext">${optIn.length} ${plural(optIn.length, 'pessoa')} ${plural(optIn.length, 'autorizou', 'autorizaram')} receber aviso deste rolê.</div>` +
+    (pending.length
+      ? `<div class="pro-form-row"><button class="pro-btn pro-btn--go" data-action="send-next">📲 Enviar próximo (${pending.length})</button>` +
+        '<button class="pro-btn pro-btn--ghost" data-action="clear-campaign">Limpar fila</button></div>'
+      : `<button class="pro-btn pro-btn--go" data-action="build-reminders" data-id="${ev.id}">Preparar ${optIn.length} ${plural(optIn.length, 'lembrete')}</button>`) +
     '</div>'
   );
 }

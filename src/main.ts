@@ -1,16 +1,22 @@
 import './styles/main.css';
 
-import type { RsvpStatus } from './types';
+import type { EventRecord, RsvpStatus } from './types';
 import { state } from './state';
 import { getAdapter } from './data';
 import { addKnownEvent } from './data/known';
 import { setMyName } from './data/identity';
-import { navigate, onRouteChange, parseRoute, inviteUrl, type Route } from './router';
+import { navigate, onRouteChange, parseRoute, inviteUrl, type ProTab, type Route } from './router';
 import { fireStamp, fireToast } from './ui/fx';
 import { renderHome } from './views/home';
 import { readCreateForm, renderCreate, resetCreateDraft, wireCreatePreview } from './views/create';
 import { renderEvent } from './views/event';
+import { renderPro } from './views/pro';
+import { renderDoor } from './views/door';
 import { buildRecapData, canvasToBlob, recapFileName, renderRecap } from './lib/recap';
+import { WALK_IN_CODE, buildContacts, filterAudience, scoreContacts, type Tier } from './lib/audience';
+import { campaignMessage, reminderMessage } from './lib/messages';
+import { normalizePhoneBR, waLink } from './lib/phone';
+import { sameName } from './lib/format';
 
 const app = document.getElementById('app') as HTMLElement;
 const data = getAdapter();
@@ -44,18 +50,31 @@ function restoreFocus(snapshot: ReturnType<typeof captureFocus>): void {
 
 function render(): void {
   const focus = captureFocus();
-  if (state.route.name === 'home') app.innerHTML = renderHome();
-  else if (state.route.name === 'create') {
+  const route = state.route;
+
+  if (route.name === 'home') app.innerHTML = renderHome();
+  else if (route.name === 'create') {
     app.innerHTML = renderCreate();
     wireCreatePreview();
+  } else if (route.name === 'pro') app.innerHTML = renderPro();
+  else if (route.name === 'door') {
+    app.innerHTML = state.loading
+      ? '<div class="loading-note">Abrindo a portaria...</div>'
+      : state.event
+        ? renderDoor(state.event)
+        : '<div class="error-note">Rolê não encontrado.</div>';
   } else app.innerHTML = renderEvent();
 
-  const routeKey = `${state.route.name}:${state.route.name === 'event' ? state.route.id : ''}`;
+  const routeKey = `${route.name}:${'id' in route ? route.id : ''}`;
   if (routeKey !== lastRenderedRoute) {
     lastRenderedRoute = routeKey;
     window.scrollTo({ top: 0 });
   }
   restoreFocus(focus);
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : 'Algo deu errado. Tenta de novo?';
 }
 
 /* ===================== carregamento por rota ===================== */
@@ -87,12 +106,26 @@ async function loadRoute(route: Route): Promise<void> {
     return;
   }
 
+  if (route.name === 'pro') {
+    state.proTab = route.tab;
+    await loadPro();
+    return;
+  }
+
+  // event | door
   state.loading = true;
   state.event = null;
-  state.eventTab = 'convite';
-  state.showPollForm = false;
-  state.lightboxPhotoId = null;
-  closeRecap();
+  state.outbox = [];
+  if (route.name === 'event') {
+    state.eventTab = 'convite';
+    state.showPollForm = false;
+    state.lightboxPhotoId = null;
+    state.linkCode = route.code;
+    closeRecap();
+  } else {
+    state.doorSearch = '';
+    state.doorAmount = null;
+  }
   render();
 
   try {
@@ -100,8 +133,10 @@ async function loadRoute(route: Route): Promise<void> {
     state.event = ev;
     if (ev) {
       addKnownEvent(ev.id);
-      // Quem não é anfitrião só existe como convidado.
-      state.guestMode = !ev.isHost;
+      state.guestMode = route.name === 'event' ? !ev.isHost : false;
+      if (ev.isHost) state.outbox = await data.listOutbox(ev.id);
+      // conta a abertura do link do promoter — só uma vez por visita
+      if (route.name === 'event' && route.code) await data.registerLinkOpen(ev.id, route.code);
       unsubscribe = data.subscribe(ev.id, () => void refreshEvent());
     }
   } catch (err) {
@@ -111,21 +146,47 @@ async function loadRoute(route: Route): Promise<void> {
   render();
 }
 
-async function refreshEvent(): Promise<void> {
-  if (state.route.name !== 'event') return;
+async function loadPro(): Promise<void> {
+  state.loading = true;
+  render();
   try {
-    state.event = await data.getEvent(state.route.id);
+    state.orgs = await data.listOrgs();
+    const org = state.orgs.find((o) => o.id === state.orgId) ?? state.orgs[0];
+    state.orgId = org?.id ?? null;
+    if (org) {
+      state.orgEvents = await data.listOrgEvents(org.id);
+      state.promoters = await data.listPromoters(org.id);
+      state.audience = scoreContacts(buildContacts(state.orgEvents));
+      const target =
+        state.orgEvents.find((e) => e.id === state.campaignEventId) ??
+        state.orgEvents.find((e) => !isPast(e));
+      state.campaignEventId = target?.id ?? null;
+      state.outbox = target ? await data.listOutbox(target.id) : [];
+    }
+  } catch (err) {
+    state.error = messageOf(err);
+  }
+  state.loading = false;
+  render();
+}
+
+function isPast(ev: EventRecord): boolean {
+  return ev.date < new Date().toISOString().slice(0, 10);
+}
+
+async function refreshEvent(): Promise<void> {
+  const route = state.route;
+  if (route.name !== 'event' && route.name !== 'door') return;
+  try {
+    state.event = await data.getEvent(route.id);
+    if (state.event?.isHost) state.outbox = await data.listOutbox(route.id);
     render();
   } catch (err) {
     console.warn('[galera] falha ao atualizar o rolê:', err);
   }
 }
 
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : 'Algo deu errado. Tenta de novo?';
-}
-
-/** Executa uma mutação, mostra erro amigável e recarrega o rolê. */
+/** Executa uma mutação, mostra erro amigável e recarrega o que está na tela. */
 async function withBusy(fn: () => Promise<void>): Promise<void> {
   if (state.busy) return;
   state.busy = true;
@@ -137,8 +198,11 @@ async function withBusy(fn: () => Promise<void>): Promise<void> {
     state.error = messageOf(err);
   }
   state.busy = false;
-  await refreshEvent();
-  render();
+  if (state.route.name === 'pro') await loadPro();
+  else {
+    await refreshEvent();
+    render();
+  }
 }
 
 /* ===================== recap ===================== */
@@ -199,12 +263,105 @@ function downloadRecap(): void {
   a.click();
 }
 
+/* ===================== campanha e mensagens ===================== */
+
+async function buildCampaign(eventId: string): Promise<void> {
+  const target = state.orgEvents.find((e) => e.id === eventId);
+  if (!target) return;
+  // onlyOptIn é forçado: campanha só vai pra quem autorizou
+  const selected = filterAudience(state.audience, { ...state.audienceFilter, onlyOptIn: true });
+  if (!selected.length) {
+    fireToast('Ninguém no filtro autorizou WhatsApp.');
+    return;
+  }
+  const promoter = state.promoters.find((p) => p.id === state.campaignPromoterId) ?? null;
+  const label = promoter
+    ? `Campanha • ${promoter.name}`
+    : `Campanha • ${new Date().toLocaleDateString('pt-BR')}`;
+
+  await withBusy(async () => {
+    const link = await data.createGuestLink(eventId, {
+      label,
+      promoterId: promoter?.id ?? null,
+      maxUses: null,
+    });
+    const url = inviteUrl(eventId, link.code);
+    await data.queueMessages(
+      eventId,
+      selected.map((c) => ({
+        toName: c.name,
+        toPhone: c.phone as string,
+        kind: 'campanha' as const,
+        text: campaignMessage(c.name, target, url),
+      })),
+    );
+    state.campaignEventId = eventId;
+  });
+  fireToast(`${selected.length} mensagens na fila 📲`);
+}
+
+async function buildReminders(eventId: string): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  const targets = ev.guests.filter((g) => g.waOptIn && g.phone && g.status !== 'nao');
+  if (!targets.length) {
+    fireToast('Ninguém autorizou WhatsApp ainda.');
+    return;
+  }
+  const url = inviteUrl(eventId);
+  await withBusy(() =>
+    data.queueMessages(
+      eventId,
+      targets.map((g) => ({
+        toName: g.name,
+        toPhone: g.phone as string,
+        kind: 'lembrete' as const,
+        text: reminderMessage(g.name, ev, url),
+      })),
+    ),
+  );
+  fireToast(`${targets.length} lembretes prontos 📲`);
+}
+
+/** Abre o WhatsApp com o texto pronto e marca a mensagem como enviada. */
+async function sendMessage(messageId: string): Promise<void> {
+  const msg = state.outbox.find((m) => m.id === messageId);
+  if (!msg) return;
+  window.open(waLink(msg.toPhone, msg.text), '_blank', 'noopener');
+  await withBusy(async () => {
+    await data.markMessageSent(msg.id);
+    state.outbox = await data.listOutbox(msg.eventId);
+  });
+}
+
+async function sendNext(): Promise<void> {
+  const next = state.outbox.find((m) => m.status === 'pendente');
+  if (!next) return;
+  await sendMessage(next.id);
+}
+
+function exportCampaignCsv(): void {
+  const rows = state.outbox.filter((m) => m.kind === 'campanha');
+  if (!rows.length) return;
+  const csv = [
+    'nome,telefone,status,mensagem',
+    ...rows.map((m) => `"${m.toName}","${m.toPhone}","${m.status}","${m.text.replace(/"/g, '""')}"`),
+  ].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'campanha-galera.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ===================== eventos de UI ===================== */
 
 document.addEventListener('click', (e) => {
   const target = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
   if (!target) return;
   const action = target.getAttribute('data-action');
+  const id = target.getAttribute('data-id') ?? '';
 
   switch (action) {
     case 'go-home':
@@ -213,8 +370,17 @@ document.addEventListener('click', (e) => {
     case 'go-create':
       navigate({ name: 'create' });
       break;
+    case 'go-pro':
+      navigate({ name: 'pro', tab: state.proTab });
+      break;
     case 'open-event':
-      navigate({ name: 'event', id: target.getAttribute('data-id') ?? '' });
+      navigate({ name: 'event', id, code: null });
+      break;
+    case 'open-door':
+      navigate({ name: 'door', id });
+      break;
+    case 'pro-tab':
+      navigate({ name: 'pro', tab: (target.getAttribute('data-tab') as ProTab) ?? 'painel' });
       break;
     case 'set-mode': {
       const ev = state.event;
@@ -234,8 +400,18 @@ document.addEventListener('click', (e) => {
       render();
       break;
     case 'copy-link':
-      void copyInviteLink(target);
+      void copyToClipboard(target, inviteUrl(id));
       break;
+    case 'copy-guest-link':
+      void copyToClipboard(target, inviteUrl(id, target.getAttribute('data-code')));
+      break;
+    case 'share-guest-link': {
+      const url = inviteUrl(id, target.getAttribute('data-code'));
+      const ev = state.event;
+      const text = `Bora pro rolê${ev ? ` "${ev.title}"` : ''}! Confirma presença aqui: ${url}`;
+      window.open(waLink(null, text), '_blank', 'noopener');
+      break;
+    }
     case 'rsvp':
       void submitRsvp(target.getAttribute('data-status') as RsvpStatus);
       break;
@@ -272,17 +448,65 @@ document.addEventListener('click', (e) => {
       closeRecap();
       render();
       break;
+
+    /* ---------- pro ---------- */
+    case 'toggle-tier': {
+      const tier = target.getAttribute('data-tier') as Tier;
+      const current = state.audienceFilter.tiers ?? [];
+      state.audienceFilter = {
+        ...state.audienceFilter,
+        tiers: current.includes(tier) ? current.filter((t) => t !== tier) : [...current, tier],
+      };
+      render();
+      break;
+    }
+    case 'build-campaign':
+      void buildCampaign(id);
+      break;
+    case 'build-reminders':
+      void buildReminders(id);
+      break;
+    case 'send-next':
+      void sendNext();
+      break;
+    case 'send-message':
+      void sendMessage(id);
+      break;
+    case 'export-campaign':
+      exportCampaignCsv();
+      break;
+    case 'clear-campaign':
+      void clearQueue();
+      break;
+    case 'toggle-promoter': {
+      const promoter = state.promoters.find((p) => p.id === id);
+      if (promoter) void withBusy(() => data.updatePromoter(promoter.id, { active: !promoter.active }));
+      break;
+    }
+
+    /* ---------- portaria ---------- */
+    case 'checkin':
+      void doCheckIn(id);
+      break;
+    case 'undo-checkin': {
+      const ev = state.event;
+      if (ev) void withBusy(() => data.undoCheckIn(ev.id, id));
+      break;
+    }
+    case 'walk-in':
+      void walkIn();
+      break;
+
     default:
       break;
   }
 });
 
-async function copyInviteLink(target: HTMLElement): Promise<void> {
-  const url = inviteUrl(target.getAttribute('data-id') ?? '');
+async function copyToClipboard(target: HTMLElement, url: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(url);
     const original = target.textContent;
-    target.textContent = '✅ Link copiado!';
+    target.textContent = '✅ Copiado!';
     setTimeout(() => {
       target.textContent = original;
     }, 1600);
@@ -291,21 +515,47 @@ async function copyInviteLink(target: HTMLElement): Promise<void> {
   }
 }
 
+async function clearQueue(): Promise<void> {
+  const eventId = state.outbox[0]?.eventId;
+  if (!eventId) return;
+  await withBusy(async () => {
+    await data.clearOutbox(eventId);
+    state.outbox = [];
+  });
+}
+
 async function submitRsvp(status: RsvpStatus): Promise<void> {
   const ev = state.event;
   if (!ev || !status) return;
-  const input = document.getElementById('guestNameInput') as HTMLInputElement | null;
-  const name = input?.value.trim() ?? '';
+  const nameInput = document.getElementById('guestNameInput') as HTMLInputElement | null;
+  const phoneInput = document.getElementById('guestPhoneInput') as HTMLInputElement | null;
+  const optInInput = document.getElementById('guestWaOptIn') as HTMLInputElement | null;
+
+  const name = nameInput?.value.trim() ?? '';
   if (!name) {
     const err = document.getElementById('rsvpError');
     if (err) err.style.display = 'block';
-    input?.focus();
+    nameInput?.focus();
     return;
   }
+
+  const rawPhone = phoneInput?.value.trim() ?? '';
+  const phone = normalizePhoneBR(rawPhone);
+  if (rawPhone && !phone) {
+    const err = document.getElementById('phoneError');
+    if (err) err.style.display = 'block';
+    phoneInput?.focus();
+    return;
+  }
+  // sem número não existe opt-in: o consentimento precisa de um destino
+  const waOptIn = !!optInInput?.checked && !!phone;
+
   state.myName = name;
   setMyName(name);
   fireStamp(status);
-  await withBusy(() => data.rsvp(ev.id, name, status));
+  await withBusy(() =>
+    data.rsvp(ev.id, { name, status, phone, waOptIn, linkCode: state.linkCode }),
+  );
 }
 
 async function submitVote(pollId: string | null, optionId: string | null): Promise<void> {
@@ -318,8 +568,36 @@ async function notifyPoll(pollId: string | null): Promise<void> {
   const ev = state.event;
   if (!ev || !pollId) return;
   await withBusy(() => data.markPollNotified(ev.id, pollId));
-  // Push real depende de servidor de notificação; por ora avisamos o anfitrião.
   fireToast(`🔔 Notificação enviada para ${ev.guests.length} convidado${ev.guests.length === 1 ? '' : 's'}!`);
+}
+
+function doorAmount(ev: EventRecord): number {
+  const input = document.getElementById('doorAmount') as HTMLInputElement | null;
+  const value = input ? parseFloat(input.value) : NaN;
+  return Number.isFinite(value) && value >= 0 ? value : ev.ticketPrice;
+}
+
+async function doCheckIn(guestId: string): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  const amount = doorAmount(ev);
+  await withBusy(() => data.checkIn(ev.id, guestId, amount));
+}
+
+async function walkIn(): Promise<void> {
+  const ev = state.event;
+  const name = state.doorSearch.trim();
+  if (!ev || !name) return;
+  const amount = doorAmount(ev);
+  await withBusy(async () => {
+    await data.rsvp(ev.id, { name, status: 'vou', linkCode: WALK_IN_CODE });
+    const fresh = await data.getEvent(ev.id);
+    const guest = fresh?.guests.find((g) => sameName(g.name, name));
+    if (guest) await data.checkIn(ev.id, guest.id, amount);
+  });
+  state.doorSearch = '';
+  render();
+  fireToast(`${name} entrou 🎉`);
 }
 
 document.addEventListener('submit', (e) => {
@@ -337,7 +615,7 @@ document.addEventListener('submit', (e) => {
         const created = await data.createEvent(input);
         addKnownEvent(created.id);
         state.busy = false;
-        navigate({ name: 'event', id: created.id });
+        navigate({ name: 'event', id: created.id, code: null });
       } catch (err) {
         state.busy = false;
         state.error = messageOf(err);
@@ -370,20 +648,96 @@ document.addEventListener('submit', (e) => {
     if (!ev || !question || options.length < 2) return;
     state.showPollForm = false;
     void withBusy(() => data.createPoll(ev.id, question, options));
+    return;
+  }
+
+  if (form.id === 'orgForm') {
+    e.preventDefault();
+    const name = (document.getElementById('orgName') as HTMLInputElement | null)?.value.trim() ?? '';
+    if (!name) return;
+    void (async () => {
+      try {
+        const org = await data.createOrg(name);
+        state.orgId = org.id;
+      } catch (err) {
+        state.error = messageOf(err);
+      }
+      await loadPro();
+    })();
+    return;
+  }
+
+  if (form.id === 'promoterForm') {
+    e.preventDefault();
+    const orgId = state.orgId;
+    const name = (document.getElementById('promoterName') as HTMLInputElement | null)?.value.trim() ?? '';
+    const phone = normalizePhoneBR((document.getElementById('promoterPhone') as HTMLInputElement | null)?.value ?? '');
+    const pct = parseFloat((document.getElementById('promoterCommission') as HTMLInputElement | null)?.value ?? '0');
+    if (!orgId || !name) return;
+    void withBusy(() => data.createPromoter(orgId, name, phone, Number.isFinite(pct) ? pct : 0).then(() => undefined));
+    return;
+  }
+
+  if (form.id === 'linkForm') {
+    e.preventDefault();
+    const ev = state.event;
+    const label = (document.getElementById('linkLabel') as HTMLInputElement | null)?.value.trim() ?? '';
+    const promoterId = (document.getElementById('linkPromoter') as HTMLSelectElement | null)?.value || null;
+    const maxRaw = (document.getElementById('linkMax') as HTMLInputElement | null)?.value ?? '';
+    const maxUses = maxRaw ? parseInt(maxRaw, 10) : null;
+    if (!ev || !label) return;
+    void withBusy(() =>
+      data.createGuestLink(ev.id, { label, promoterId, maxUses }).then(() => undefined),
+    );
   }
 });
 
 document.addEventListener('change', (e) => {
-  const input = e.target as HTMLInputElement;
-  if (input.id !== 'photoInput') return;
-  const files = Array.from(input.files ?? []);
-  const ev = state.event;
-  if (!files.length || !ev) return;
-  const uploader = state.myName || (ev.isHost && !state.guestMode ? 'Anfitrião' : 'Convidado');
-  void withBusy(async () => {
-    await data.addPhotos(ev.id, files, uploader);
-    fireToast(`${files.length} foto${files.length === 1 ? '' : 's'} no álbum 📸`);
-  });
+  const el = e.target as HTMLInputElement | HTMLSelectElement;
+
+  if (el.id === 'photoInput') {
+    const input = el as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    const ev = state.event;
+    if (!files.length || !ev) return;
+    const uploader = state.myName || (ev.isHost && !state.guestMode ? 'Anfitrião' : 'Convidado');
+    void withBusy(async () => {
+      await data.addPhotos(ev.id, files, uploader);
+      fireToast(`${files.length} foto${files.length === 1 ? '' : 's'} no álbum 📸`);
+    });
+    return;
+  }
+
+  if (el.id === 'campaignEvent') {
+    state.campaignEventId = el.value;
+    void loadPro();
+    return;
+  }
+
+  if (el.id === 'campaignPromoter') {
+    state.campaignPromoterId = el.value || null;
+    render();
+  }
+});
+
+document.addEventListener('input', (e) => {
+  const el = e.target as HTMLInputElement;
+
+  if (el.id === 'doorSearch') {
+    state.doorSearch = el.value;
+    render();
+    return;
+  }
+  if (el.id === 'audienceSearch') {
+    state.audienceFilter = { ...state.audienceFilter, search: el.value };
+    render();
+    return;
+  }
+  if (el.id === 'audienceSize') {
+    const size = parseInt(el.value, 10);
+    state.audienceFilter = { ...state.audienceFilter, size: Number.isFinite(size) ? size : undefined };
+    render();
+  }
 });
 
 /* ===================== boot ===================== */

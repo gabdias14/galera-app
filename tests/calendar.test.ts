@@ -1,24 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildICS, escapeICS, googleCalUrl, icsDateEnd, icsDateStart } from '../src/lib/calendar';
-import type { EventRecord } from '../src/types';
+import { makeEvent } from './fixtures';
 
-const ev: EventRecord = {
+const ev = makeEvent({
   id: 'abc',
-  emoji: '🍖',
   title: 'Churrasco do Gabriel',
-  date: '2026-08-14',
-  time: '13:00',
-  location: 'Vila Madalena, SP',
   description: 'Traz a fruta da caipirinha;\nou não',
-  color: 'coral',
-  pix: '',
-  createdAt: '2026-07-01T12:00:00.000Z',
-  isHost: true,
-  guests: [],
-  mural: [],
-  polls: [],
-  photos: [],
-};
+});
 
 describe('ICS', () => {
   it('usa horário local no formato do calendário', () => {
