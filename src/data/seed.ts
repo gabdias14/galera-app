@@ -116,6 +116,33 @@ function socialEvents(hostId: string): StoredEvent[] {
       ],
       photos: [],
       links: [],
+      // o caso clássico: cada um comprou uma coisa e ninguém sabe quem deve
+      expenses: [
+        {
+          id: uid(),
+          description: 'Carne (picanha, linguiça e costela)',
+          amount: 320,
+          paidBy: 'Gabriel',
+          sharedWith: [],
+          createdAt: isoTimeAgo(1),
+        },
+        {
+          id: uid(),
+          description: 'Cerveja e gelo',
+          amount: 180,
+          paidBy: 'Marina Costa',
+          sharedWith: [],
+          createdAt: isoTimeAgo(1),
+        },
+        {
+          id: uid(),
+          description: 'Carvão e descartáveis',
+          amount: 76.5,
+          paidBy: 'Lucas Andrade',
+          sharedWith: [],
+          createdAt: isoTimeAgo(1),
+        },
+      ],
     },
     {
       id: uid(),

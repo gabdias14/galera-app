@@ -17,6 +17,7 @@ import {
   linksSectionHtml,
   remindersPanelHtml,
 } from './components';
+import { splitSectionHtml } from './split';
 
 function topbarHtml(ev: EventRecord): string {
   return (
@@ -102,6 +103,11 @@ export function renderGuestView(ev: EventRecord): string {
     '<div class="section-label">Álbum do rolê</div>' +
     albumSectionHtml(ev) +
     '</div>' +
+    // quem deve precisa ver o próprio saldo sem depender do anfitrião cobrar
+    '<div class="guest-preview-strip">' +
+    '<div class="section-label">Rachar a conta</div>' +
+    splitSectionHtml(ev) +
+    '</div>' +
     '<div class="share-row" style="margin-top:26px;">' +
     recapButtonHtml(ev) +
     '</div>' +
@@ -161,6 +167,7 @@ export function renderHostView(ev: EventRecord): string {
     tab('enquete', `Enquetes${ev.polls.length ? ` (${ev.polls.length})` : ''}`) +
     tab('mural', 'Mural') +
     tab('album', 'Álbum') +
+    tab('rachar', `Rachar${ev.expenses.length ? ` (${ev.expenses.length})` : ''}`) +
     tab('links', `Links${ev.links.length ? ` (${ev.links.length})` : ''}`) +
     '</div>';
 
@@ -207,6 +214,8 @@ export function renderHostView(ev: EventRecord): string {
       (ev.mural.length
         ? ev.mural.map(muralPostHtml).join('')
         : '<div class="empty-note">Nenhum aviso ainda. Poste algo pra sua galera!</div>');
+  } else if (state.eventTab === 'rachar') {
+    body = splitSectionHtml(ev);
   } else if (state.eventTab === 'links') {
     body = linksSectionHtml(ev);
   } else {

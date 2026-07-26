@@ -3,7 +3,7 @@ import type { ProTab, Route } from './router';
 import type { AudienceFilter, ScoredContact } from './lib/audience';
 import { getMyName } from './data/identity';
 
-export type EventTab = 'convite' | 'convidados' | 'enquete' | 'mural' | 'album' | 'links';
+export type EventTab = 'convite' | 'convidados' | 'enquete' | 'mural' | 'album' | 'rachar' | 'links';
 
 export interface AppState {
   route: Route;

@@ -608,6 +608,9 @@ document.addEventListener('click', (e) => {
     case 'reset-demo':
       resetDemo();
       break;
+    case 'delete-expense':
+      void deleteExpense(id);
+      break;
     case 'copy-link':
       void copyToClipboard(target, inviteUrl(id));
       break;
@@ -747,6 +750,16 @@ async function deleteEvent(eventId: string): Promise<void> {
     state.error = messageOf(err);
     render();
   }
+}
+
+async function deleteExpense(expenseId: string): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  const x = ev.expenses.find((e) => e.id === expenseId);
+  const ok = window.confirm(`Apagar "${x?.description ?? 'esta despesa'}" do rateio?`);
+  if (!ok) return;
+  await withBusy(() => data.deleteExpense(ev.id, expenseId));
+  fireToast('Despesa apagada.');
 }
 
 async function setConsent(guestId: string, waOptIn: boolean): Promise<void> {
@@ -1151,6 +1164,33 @@ document.addEventListener('submit', (e) => {
     if (!ev || !text) return;
     input!.value = '';
     void withBusy(() => data.addMuralPost(ev.id, text));
+    return;
+  }
+
+  if (form.id === 'expenseForm') {
+    e.preventDefault();
+    const ev = state.event;
+    const descEl = document.getElementById('expenseDesc') as HTMLInputElement | null;
+    const amountEl = document.getElementById('expenseAmount') as HTMLInputElement | null;
+    const paidByEl = document.getElementById('expensePaidBy') as HTMLInputElement | null;
+    const description = descEl?.value.trim() ?? '';
+    const amount = parseFloat((amountEl?.value ?? '').replace(',', '.'));
+    const paidBy = paidByEl?.value.trim() ?? '';
+    if (!ev || !description || !paidBy || !Number.isFinite(amount) || amount <= 0) {
+      state.error = 'Preencha o que foi comprado, o valor e quem pagou.';
+      render();
+      return;
+    }
+    // quem lança normalmente é quem pagou: guarda o nome pra próxima despesa
+    if (!state.myName) {
+      state.myName = paidBy;
+      setMyName(paidBy);
+    }
+    if (descEl) descEl.value = '';
+    if (amountEl) amountEl.value = '';
+    state.error = null;
+    // sharedWith vazio = todo mundo que confirmou (ver src/lib/split.ts)
+    void withBusy(() => data.addExpense(ev.id, { description, amount, paidBy, sharedWith: [] }));
     return;
   }
 

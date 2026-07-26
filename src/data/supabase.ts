@@ -70,6 +70,14 @@ interface EventRow {
     doc_last4: string | null;
   }[];
   checkins: { guest_id: string; checked_in_at: string; amount_paid: number | string }[];
+  expenses: {
+    id: string;
+    description: string;
+    amount: number | string;
+    paid_by: string;
+    shared_with: string[] | null;
+    created_at: string;
+  }[];
 }
 
 const EVENT_SELECT = `
@@ -81,7 +89,8 @@ const EVENT_SELECT = `
   photos ( id, url, caption, uploader ),
   guest_links ( id, event_id, promoter_id, code, label, max_uses, opens, active, created_at ),
   guest_contacts ( guest_id, phone, wa_opt_in, wa_opt_in_at, doc_last4 ),
-  checkins ( guest_id, checked_in_at, amount_paid )
+  checkins ( guest_id, checked_in_at, amount_paid ),
+  expenses ( id, description, amount, paid_by, shared_with, created_at )
 `;
 
 const REALTIME_TABLES = [
@@ -94,6 +103,7 @@ const REALTIME_TABLES = [
   'photos',
   'guest_links',
   'checkins',
+  'expenses',
 ];
 
 function num(value: number | string | null | undefined): number {
@@ -242,6 +252,16 @@ export class SupabaseAdapter implements DataAdapter {
       polls: row.polls.map(toPoll),
       photos: row.photos.map(toPhoto),
       links: (row.guest_links ?? []).map(toLink),
+      expenses: [...(row.expenses ?? [])]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .map((x) => ({
+          id: x.id,
+          description: x.description,
+          amount: num(x.amount),
+          paidBy: x.paid_by,
+          sharedWith: x.shared_with ?? [],
+          createdAt: x.created_at,
+        })),
     };
   }
 
@@ -410,6 +430,25 @@ export class SupabaseAdapter implements DataAdapter {
         .insert({ event_id: eventId, storage_path: path, url: data.publicUrl, uploader });
       if (error) throw new Error(error.message);
     }
+  }
+
+  async addExpense(
+    eventId: string,
+    input: { description: string; amount: number; paidBy: string; sharedWith: string[] },
+  ): Promise<void> {
+    const { error } = await this.sb.from('expenses').insert({
+      event_id: eventId,
+      description: input.description.trim(),
+      amount: input.amount,
+      paid_by: input.paidBy.trim(),
+      shared_with: input.sharedWith,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async deleteExpense(eventId: string, expenseId: string): Promise<void> {
+    const { error } = await this.sb.from('expenses').delete().eq('id', expenseId).eq('event_id', eventId);
+    if (error) throw new Error(error.message);
   }
 
   subscribe(eventId: string, onChange: () => void): () => void {

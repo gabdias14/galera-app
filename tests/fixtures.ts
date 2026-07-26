@@ -38,6 +38,7 @@ export function makeEvent(overrides: Partial<EventRecord> = {}): EventRecord {
     polls: [],
     photos: [],
     links: [],
+    expenses: [],
     ...overrides,
   };
 }

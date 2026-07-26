@@ -60,6 +60,23 @@ export interface Photo {
   gradient?: string;
 }
 
+/**
+ * Uma compra feita pro rolê ("Carne — R$ 180, pagou o Gabriel").
+ * O rateio derivado disso vive em src/lib/split.ts.
+ */
+export interface Expense {
+  id: string;
+  /** O que foi comprado. */
+  description: string;
+  /** Valor total em reais. */
+  amount: number;
+  /** Quem desembolsou. Texto livre: quem paga pode nem ter dado RSVP. */
+  paidBy: string;
+  /** Quem racha essa despesa. Vazio = todo mundo que confirmou presença. */
+  sharedWith: string[];
+  createdAt: string;
+}
+
 /** Link rastreável de convite — a unidade de atribuição do B2B. */
 export interface GuestLink {
   id: string;
@@ -153,6 +170,7 @@ export interface EventRecord {
   polls: Poll[];
   photos: Photo[];
   links: GuestLink[];
+  expenses: Expense[];
 }
 
 export interface NewEventInput {
@@ -221,6 +239,16 @@ export interface DataAdapter {
   votePoll(eventId: string, pollId: string, optionId: string, voterName: string): Promise<void>;
   markPollNotified(eventId: string, pollId: string): Promise<void>;
   addPhotos(eventId: string, files: File[], uploader: string): Promise<void>;
+
+  /* ---------- divisão de custos ---------- */
+
+  /** Qualquer um com o link lança: quem comprou é quem sabe o valor. */
+  addExpense(
+    eventId: string,
+    input: { description: string; amount: number; paidBy: string; sharedWith: string[] },
+  ): Promise<void>;
+  /** Só o anfitrião apaga — é quem modera o rateio. */
+  deleteExpense(eventId: string, expenseId: string): Promise<void>;
   /** Notifica mudanças no evento (realtime no Supabase, `storage` event no local). */
   subscribe(eventId: string, onChange: () => void): () => void;
 

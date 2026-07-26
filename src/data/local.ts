@@ -1,6 +1,7 @@
 import type {
   DataAdapter,
   EventRecord,
+  Expense,
   Guest,
   GuestLink,
   NewEventInput,
@@ -23,9 +24,11 @@ const DB_KEY = 'galera.db.v2';
 
 type StoredGuest = Omit<Guest, 'color'> & { token?: string | null };
 
-export interface StoredEvent extends Omit<EventRecord, 'isHost' | 'guests'> {
+export interface StoredEvent extends Omit<EventRecord, 'isHost' | 'guests' | 'expenses'> {
   hostId: string;
   guests: StoredGuest[];
+  /** Opcional: rolês gravados antes da divisão de custos existir não têm o campo. */
+  expenses?: Expense[];
 }
 
 export interface StoredOrg extends Org {
@@ -99,6 +102,8 @@ function hydrate(ev: StoredEvent, myId: string): EventRecord {
   return {
     ...rest,
     isHost: hostId === myId,
+    // rolês gravados antes da divisão de custos existir não têm o campo
+    expenses: ev.expenses ?? [],
     guests: ev.guests.map(({ token: _token, ...g }) => ({ ...g, color: avatarColor(g.name) })),
   };
 }
@@ -160,6 +165,7 @@ export class LocalAdapter implements DataAdapter {
       polls: [],
       photos: [],
       links: [],
+      expenses: [],
     };
     mutate((db) => db.events.unshift(ev));
     return hydrate(ev, deviceId());
@@ -284,6 +290,29 @@ export class LocalAdapter implements DataAdapter {
         ev.photos.push({ id: uid(), url: dataUrl, caption: '', uploader });
       });
     }
+  }
+
+  async addExpense(
+    eventId: string,
+    input: { description: string; amount: number; paidBy: string; sharedWith: string[] },
+  ): Promise<void> {
+    mutateEvent(eventId, (ev) => {
+      if (!ev.expenses) ev.expenses = [];
+      ev.expenses.unshift({
+        id: uid(),
+        description: input.description.trim(),
+        amount: input.amount,
+        paidBy: input.paidBy.trim(),
+        sharedWith: input.sharedWith,
+        createdAt: new Date().toISOString(),
+      });
+    });
+  }
+
+  async deleteExpense(eventId: string, expenseId: string): Promise<void> {
+    mutateEvent(eventId, (ev) => {
+      ev.expenses = (ev.expenses ?? []).filter((x) => x.id !== expenseId);
+    });
   }
 
   subscribe(_eventId: string, onChange: () => void): () => void {

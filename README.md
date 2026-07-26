@@ -48,6 +48,7 @@ src/
     calendar.ts         # .ics e link do Google Agenda
     recap.ts            # gerador do Recap (canvas 1080×1920)
     audience.ts         # B2B: score de público, tiers, projeção, promoters, portaria
+    split.ts            # rateio do rolê: saldo por pessoa e quem paga quem
     messages.ts         # textos de campanha e lembrete de WhatsApp
     phone.ts            # telefone BR (E.164) e link do WhatsApp
     image.ts            # redimensiona foto antes de subir/guardar
