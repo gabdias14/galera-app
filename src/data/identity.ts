@@ -79,3 +79,14 @@ export function forgetGuestToken(eventId: string): void {
 export function allRememberedGuestRecords(): Array<{ eventId: string; guestId: string }> {
   return Object.entries(readTokens()).map(([eventId, entry]) => ({ eventId, guestId: entry.guestId }));
 }
+
+/** Esquece aparelho, nome e tokens de RSVP — parte do "reiniciar demo" (ver src/data/local.ts). */
+export function resetIdentity(): void {
+  try {
+    localStorage.removeItem(DEVICE_KEY);
+    localStorage.removeItem(NAME_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* modo privado / storage indisponível: nada a limpar */
+  }
+}

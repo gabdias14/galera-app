@@ -4,11 +4,13 @@ import type { EventRecord, RsvpStatus } from './types';
 import { state } from './state';
 import { getAdapter } from './data';
 import { addKnownEvent } from './data/known';
+import { resetLocalDb } from './data/local';
 import {
   allRememberedGuestRecords,
   forgetGuestToken,
   guestTokenFor,
   rememberGuestToken,
+  resetIdentity,
   setMyName,
 } from './data/identity';
 import { navigate, onRouteChange, parseRoute, inviteUrl, promoterUrl, type ProTab, type Route } from './router';
@@ -603,6 +605,9 @@ document.addEventListener('click', (e) => {
     case 'forget-everything':
       void forgetEverything();
       break;
+    case 'reset-demo':
+      resetDemo();
+      break;
     case 'copy-link':
       void copyToClipboard(target, inviteUrl(id));
       break;
@@ -766,6 +771,34 @@ async function forgetGuest(guestId: string): Promise<void> {
     setMyName('');
   }
   fireToast('Dados apagados.');
+}
+
+/** Ver docs/startup/lancamento-90-dias.md — botão do banner de demo (mountDemoBanner). */
+function resetDemo(): void {
+  const ok = window.confirm(
+    'Reiniciar a demonstração? Isso apaga os rolês, promoters e respostas salvos neste navegador e recomeça do zero.',
+  );
+  if (!ok) return;
+  resetLocalDb();
+  resetIdentity();
+  location.reload();
+}
+
+/**
+ * Só existe no build do demo público (VITE_DEMO_MODE=true no
+ * .github/workflows/deploy-pages.yml) — deixa claro que "Aurora Produções"
+ * e companhia são dados fictícios, não uma cliente real, e dá um jeito de
+ * limpar o que ficou de uma demonstração anterior no mesmo aparelho.
+ */
+function mountDemoBanner(): void {
+  if (import.meta.env.VITE_DEMO_MODE !== 'true') return;
+  const bar = document.createElement('div');
+  bar.className = 'demo-banner';
+  bar.innerHTML =
+    '<span>🎭 Modo demonstração — dados fictícios, salvos só neste navegador.</span>' +
+    '<button type="button" data-action="reset-demo">Reiniciar demo</button>';
+  document.body.appendChild(bar);
+  document.body.classList.add('has-demo-banner');
 }
 
 async function forgetEverything(): Promise<void> {
@@ -1231,10 +1264,28 @@ onRouteChange((route) => void loadRoute(route));
 window.addEventListener('online', () => void flushOfflineQueue());
 setInterval(() => void flushOfflineQueue(), 20_000);
 
+/**
+ * Contador de visita externo (GoatCounter, grátis) — só carrega se
+ * VITE_GOATCOUNTER_SITE estiver definido (build do demo público). Sem essa
+ * variável, nenhuma chamada de rede a terceiro sai do app, mesmo no modo
+ * local — é o padrão de privacidade que o resto do app já segue.
+ */
+function mountExternalAnalytics(): void {
+  const site = import.meta.env.VITE_GOATCOUNTER_SITE;
+  if (!site) return;
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = '//gc.zgo.at/count.js';
+  script.dataset.goatcounter = `https://${site}.goatcounter.com/count`;
+  document.head.appendChild(script);
+}
+
 async function boot(): Promise<void> {
   state.backend = data.kind;
   initAnalytics(data);
   installErrorReporting();
+  mountDemoBanner();
+  mountExternalAnalytics();
   try {
     await data.init();
   } catch (err) {

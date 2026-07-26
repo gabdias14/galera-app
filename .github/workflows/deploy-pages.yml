@@ -31,6 +31,13 @@ jobs:
         run: npm run build
         env:
           GH_PAGES: 'true'
+          VITE_DEMO_MODE: 'true'
+          # Opcional: crie uma conta grátis em goatcounter.com, adicione o site
+          # code como variável de repositório (Settings > Secrets and variables
+          # > Actions > Variables > VITE_GOATCOUNTER_SITE) pra ligar o contador
+          # de visitas do demo. Sem essa variável, nada de analytics externo é
+          # carregado — ver src/main.ts, mountExternalAnalytics().
+          VITE_GOATCOUNTER_SITE: ${{ vars.VITE_GOATCOUNTER_SITE }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

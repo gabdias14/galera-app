@@ -76,6 +76,15 @@ function readDb(): Db {
   return fresh;
 }
 
+/** Apaga o banco local — a próxima leitura reseeda do zero (ver readDb). Usado pelo "reiniciar demo". */
+export function resetLocalDb(): void {
+  try {
+    localStorage.removeItem(DB_KEY);
+  } catch {
+    /* modo privado / storage indisponível: nada a limpar */
+  }
+}
+
 function writeDb(db: Db): void {
   try {
     localStorage.setItem(DB_KEY, JSON.stringify(db));

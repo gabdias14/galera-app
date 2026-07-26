@@ -445,3 +445,19 @@ input,textarea{font-family:inherit;}
 .scanner-modal{position:fixed; inset:0; background:rgba(10,3,15,.94); z-index:70; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; gap:16px;}
 .scanner-modal video{width:100%; max-width:420px; border-radius:20px; background:#000;}
 .scanner-modal__hint{color:var(--paper); font-size:.9rem; text-align:center; max-width:340px;}
+
+/* banner do demo público (mountDemoBanner em main.ts) */
+.demo-banner{
+  position:fixed; left:0; right:0; bottom:0; z-index:60;
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:10px 16px;
+  background:var(--ink); color:var(--paper); font-size:.82rem; font-weight:600;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+  box-shadow:0 -6px 20px rgba(0,0,0,.25);
+}
+.demo-banner button{
+  background:var(--yellow); color:#3a2900; border:none; border-radius:999px;
+  font-weight:800; font-size:.78rem; padding:6px 14px; box-shadow:0 3px 0 var(--yellow-dark);
+  flex-shrink:0;
+}
+.demo-banner button:active{transform:translateY(3px); box-shadow:none;}
+body.has-demo-banner{padding-bottom:52px;}
