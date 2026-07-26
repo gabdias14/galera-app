@@ -255,7 +255,14 @@ export class SupabaseAdapter implements DataAdapter {
       .join(',');
     if (!filters) return [];
 
-    const { data, error } = await this.sb.from('events').select(EVENT_SELECT).or(filters).order('date');
+    // known.ts já limita a 200 ids lembrados neste aparelho; o limit() aqui é
+    // só o cinto de segurança do lado do servidor (item #24 do backlog)
+    const { data, error } = await this.sb
+      .from('events')
+      .select(EVENT_SELECT)
+      .or(filters)
+      .order('date')
+      .limit(200);
     if (error) throw new Error(error.message);
     return (data as unknown as EventRow[]).map((row) => this.hydrate(row));
   }

@@ -1,6 +1,6 @@
 import type { EventRecord, RsvpStatus } from '../types';
 import { state } from '../state';
-import { escapeHtml, initials, sameName } from '../lib/format';
+import { escapeHtml, initials, plural, sameName } from '../lib/format';
 import { daysUntil, stubDate } from '../lib/date';
 import { inviteUrl } from '../router';
 import {
@@ -110,10 +110,14 @@ export function renderGuestView(ev: EventRecord): string {
   );
 }
 
+/** Rolê de 500+ convidados não pode redesenhar tudo a cada tecla (item #24). */
+const GUEST_PAGE_SIZE = 60;
+
 function guestGroupHtml(ev: EventRecord, status: RsvpStatus, label: string, color: string): string {
   const list = ev.guests.filter((g) => g.status === status);
-  const rows = list.length
-    ? list
+  const visible = list.slice(0, GUEST_PAGE_SIZE);
+  const rows = visible.length
+    ? visible
         .map((g) => {
           const waTag = g.waOptIn
             ? `<button class="link-btn" style="font-size:.75rem;" data-action="guest-opt-out" data-id="${g.id}" title="Desligar avisos de WhatsApp">📲 desligar</button>`
@@ -129,10 +133,14 @@ function guestGroupHtml(ev: EventRecord, status: RsvpStatus, label: string, colo
         })
         .join('')
     : '<div class="empty-note">Ninguém por aqui ainda.</div>';
+  const overflow =
+    list.length > GUEST_PAGE_SIZE
+      ? `<div class="empty-note">+${list.length - GUEST_PAGE_SIZE} ${plural(list.length - GUEST_PAGE_SIZE, 'convidado')} — use a busca da portaria pra achar alguém específico</div>`
+      : '';
   return (
     '<div class="guest-group">' +
     `<div class="guest-group__title"><span class="dot" style="background:${color}"></span>${label} (${list.length})</div>` +
-    `<div class="guest-list">${rows}</div></div>`
+    `<div class="guest-list">${rows}</div>${overflow}</div>`
   );
 }
 

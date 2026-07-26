@@ -108,8 +108,28 @@ function render(): void {
   if (routeKey !== lastRenderedRoute) {
     lastRenderedRoute = routeKey;
     window.scrollTo({ top: 0 });
+    announceRoute(route, state.event);
   }
   restoreFocus(focus);
+}
+
+const ROUTE_LABEL: Record<Route['name'], string> = {
+  home: 'Seus rolês',
+  create: 'Criar rolê',
+  edit: 'Editar rolê',
+  event: 'Convite',
+  door: 'Portaria',
+  privacidade: 'Privacidade',
+  promoter: 'Painel do promoter',
+  pro: 'Galera Pro',
+};
+
+/** Anuncia a troca de tela pro leitor de tela (ver #routeAnnouncer no index.html). */
+function announceRoute(route: Route, event: EventRecord | null): void {
+  const announcer = document.getElementById('routeAnnouncer');
+  if (!announcer) return;
+  const label = route.name === 'event' && event ? event.title : ROUTE_LABEL[route.name];
+  announcer.textContent = label;
 }
 
 function messageOf(err: unknown): string {

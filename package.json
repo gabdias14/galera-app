@@ -15,7 +15,8 @@
     "cap:ios": "npm run cap:sync && cap open ios",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:all": "npm run typecheck && npm test && npm run test:e2e"
+    "test:all": "npm run typecheck && npm test && npm run test:e2e",
+    "gen:og": "node scripts/generate-og-image.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

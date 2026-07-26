@@ -4,7 +4,9 @@ import { escapeHtml } from '../lib/format';
 export function fireToast(message: string): void {
   const layer = document.createElement('div');
   layer.className = 'toast-layer';
-  layer.innerHTML = `<div class="toast">${escapeHtml(message)}</div>`;
+  // role="status" faz o leitor de tela anunciar sozinho — sem isso o toast é
+  // só visual e some antes de alguém navegar até ele (item #23 do backlog)
+  layer.innerHTML = `<div class="toast" role="status" aria-live="polite">${escapeHtml(message)}</div>`;
   document.body.appendChild(layer);
   setTimeout(() => {
     layer.classList.add('is-fading');
@@ -23,7 +25,7 @@ export function fireStamp(status: RsvpStatus): void {
   const config = STAMPS[status];
   const layer = document.createElement('div');
   layer.className = 'stamp-layer';
-  layer.innerHTML = `<div class="stamp" style="color:${config.color}">${config.text}</div>`;
+  layer.innerHTML = `<div class="stamp" role="status" style="color:${config.color}">${config.text}</div>`;
   document.body.appendChild(layer);
 
   if (status === 'vou') fireConfetti();
