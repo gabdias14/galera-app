@@ -125,6 +125,16 @@ isso.
 
 O preço mira abaixo do custo mensal de **um** promoter, que é a alternativa real de gasto do cliente.
 
+**Como cobrar sem dar 15–30% pra Google/Apple:** a assinatura do Pro é vendida no site
+(galera.app, com Stripe/Pagar.me/Asaas — `docs/startup/lancamento-90-dias.md`, semana 5), nunca por
+uma tela de "assinar" dentro do app Android ou iOS. O app da produtora é uma ferramenta de trabalho
+pro dia a dia (portaria, campanha), não um conteúdo digital consumido dentro do app — é a mesma
+categoria de Shopify POS, Square ou Salesforce, que também não vendem assinatura via loja. Enquanto
+a compra nunca acontece dentro do app, a Google Play Billing e a In-App Purchase da Apple simplesmente
+não entram no fluxo — não é uma zona cinzenta de política, é o app não ter tela de checkout nenhuma.
+Se um dia o app precisar avisar quem não é Pro, o certo é um link que abre o navegador, nunca um
+checkout dentro de uma WebView do próprio app.
+
 ### Linha 2 — Mensagens (margem sobre custo)
 
 Preços verificados da Meta ([desenvolvedores](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing),
@@ -192,6 +202,9 @@ que é o teste que esse número precisa passar.
 | Apple Developer (US$ 99/ano) | ~45 |
 | Domínio e e-mail | ~30 |
 | **Total** | **~215** |
+
+**Custo único de abertura (não recorrente, não entra na tabela acima):** Google Play Console —
+US$ 25, pagos uma vez só, sem mensalidade — ao contrário da Apple, que cobra os US$ 99 todo ano.
 
 Isso é a razão de o plano não pedir capital: o negócio **cabe no bolso** até dar sinal.
 
