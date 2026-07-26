@@ -6,5 +6,6 @@ export default defineConfig({
   test: {
     // os .spec.ts de e2e são do Playwright, não do vitest
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['tests/setup.ts'],
   },
 });

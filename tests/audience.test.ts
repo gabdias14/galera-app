@@ -29,8 +29,8 @@ function link(code: string, label: string, promoterId: string | null): GuestLink
 }
 
 const promoters: Promoter[] = [
-  { id: 'p1', orgId: 'o1', name: 'Rafa', phone: null, commissionPct: 10, active: true, createdAt: '' },
-  { id: 'p2', orgId: 'o1', name: 'Bibi', phone: null, commissionPct: 20, active: true, createdAt: '' },
+  { id: 'p1', orgId: 'o1', name: 'Rafa', phone: null, commissionPct: 10, active: true, createdAt: '', publicToken: 'tok-rafa' },
+  { id: 'p2', orgId: 'o1', name: 'Bibi', phone: null, commissionPct: 20, active: true, createdAt: '', publicToken: 'tok-bibi' },
 ];
 
 /** Três edições passadas + uma futura, com perfis bem distintos de público. */

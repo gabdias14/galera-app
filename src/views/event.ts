@@ -1,7 +1,7 @@
 import type { EventRecord, RsvpStatus } from '../types';
 import { state } from '../state';
 import { escapeHtml, initials, sameName } from '../lib/format';
-import { stubDate } from '../lib/date';
+import { daysUntil, stubDate } from '../lib/date';
 import { inviteUrl } from '../router';
 import {
   albumSectionHtml,
@@ -27,6 +27,14 @@ function topbarHtml(ev: EventRecord): string {
   );
 }
 
+function recapButtonHtml(ev: EventRecord): string {
+  // antes do rolê, o Recap vira contagem regressiva — é o que traz gente a
+  // tempo de confirmar, não só lembrança pra depois (backlog #8/#10)
+  const upcoming = daysUntil(ev.date) >= 0;
+  const label = upcoming ? '⏳ Gerar contagem regressiva' : '✨ Gerar recap';
+  return `<button class="share-btn share-btn--recap" data-action="open-recap" data-variant="${upcoming ? 'contagem' : 'padrao'}">${label}</button>`;
+}
+
 function shareRowHtml(ev: EventRecord): string {
   const url = inviteUrl(ev.id);
   const text = encodeURIComponent(`Bora pro rolê "${ev.title}"! Confirma presença aqui: ${url}`);
@@ -34,7 +42,7 @@ function shareRowHtml(ev: EventRecord): string {
     '<div class="share-row">' +
     `<a class="share-btn share-btn--wa" href="https://wa.me/?text=${text}" target="_blank" rel="noopener">📲 Compartilhar no WhatsApp</a>` +
     `<button class="share-btn share-btn--copy" data-action="copy-link" data-id="${ev.id}">🔗 Copiar link do convite</button>` +
-    '<button class="share-btn share-btn--recap" data-action="open-recap">✨ Gerar recap</button>' +
+    recapButtonHtml(ev) +
     `<button class="share-btn share-btn--copy" data-action="open-door" data-id="${ev.id}">🚪 Portaria</button>` +
     `<button class="share-btn share-btn--copy" data-action="edit-event" data-id="${ev.id}">✏️ Editar</button>` +
     '</div>'
@@ -59,6 +67,22 @@ function pollsForGuestHtml(ev: EventRecord): string {
   return `<div class="guest-preview-strip"><div class="section-label">Enquetes</div>${cards}</div>`;
 }
 
+/**
+ * O convite passou e vira convite pro próximo: é o momento de maior intenção
+ * de quem só assistiu de fora (backlog #10) — o Recap sozinho não pede nada.
+ */
+function autoConviteHtml(ev: EventRecord): string {
+  if (daysUntil(ev.date) >= 0) return '';
+  return (
+    '<div class="pro-panel" style="text-align:center; margin-top:26px;">' +
+    `<div style="font-size:1.8rem; margin-bottom:8px;">${ev.emoji}✨</div>` +
+    '<h3 style="margin-bottom:6px;">Curtiu o rolê?</h3>' +
+    '<div class="helptext" style="margin-bottom:16px;">O convite que você acabou de ver levou 2 minutos pra montar. Cria o seu.</div>' +
+    '<button class="pro-btn pro-btn--go" data-action="go-create" data-source="autoconvite">+ Criar meu rolê</button>' +
+    '</div>'
+  );
+}
+
 export function renderGuestView(ev: EventRecord): string {
   return (
     topbarHtml(ev) +
@@ -79,8 +103,9 @@ export function renderGuestView(ev: EventRecord): string {
     albumSectionHtml(ev) +
     '</div>' +
     '<div class="share-row" style="margin-top:26px;">' +
-    '<button class="share-btn share-btn--recap" data-action="open-recap">✨ Gerar recap do rolê</button>' +
+    recapButtonHtml(ev) +
     '</div>' +
+    autoConviteHtml(ev) +
     '</div>'
   );
 }

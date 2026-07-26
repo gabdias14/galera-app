@@ -1,4 +1,4 @@
-import type { EventRecord, Org, OutboxMessage, Promoter, ThemeColor } from './types';
+import type { EventRecord, Org, OutboxMessage, Promoter, PromoterView, ThemeColor } from './types';
 import type { ProTab, Route } from './router';
 import type { AudienceFilter, ScoredContact } from './lib/audience';
 import { getMyName } from './data/identity';
@@ -27,6 +27,9 @@ export interface AppState {
   recapOpen: boolean;
   recapLoading: boolean;
   recapUrl: string | null;
+  /** Título e id usados no compartilhar/baixar — id null pro recap de temporada (sem rolê único). */
+  recapTitle: string;
+  recapEventId: string | null;
   busy: boolean;
 
   /* ---------- Galera Pro ---------- */
@@ -42,10 +45,14 @@ export interface AppState {
   campaignPromoterId: string | null;
   /** Fila de mensagens do rolê aberto (ou do alvo da campanha). */
   outbox: OutboxMessage[];
+  /** Painel público do promoter (`#/promoter/<token>`) — sem login. */
+  promoterView: PromoterView | null;
 
   /* ---------- portaria ---------- */
   doorSearch: string;
   doorAmount: number | null;
+  doorScannerOpen: boolean;
+  doorScannerError: string | null;
 }
 
 export const COLORS: Record<ThemeColor, { tint: string; accent: string }> = {
@@ -73,6 +80,8 @@ export const state: AppState = {
   recapOpen: false,
   recapLoading: false,
   recapUrl: null,
+  recapTitle: '',
+  recapEventId: null,
   busy: false,
 
   proTab: 'painel',
@@ -85,7 +94,10 @@ export const state: AppState = {
   campaignEventId: null,
   campaignPromoterId: null,
   outbox: [],
+  promoterView: null,
 
   doorSearch: '',
   doorAmount: null,
+  doorScannerOpen: false,
+  doorScannerError: null,
 };

@@ -10,3 +10,15 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** Ainda fora do lib.dom.d.ts do TS — suportado no Chrome/Android, não no Safari/iOS. */
+interface BarcodeDetectorOptions {
+  formats: string[];
+}
+interface DetectedBarcode {
+  rawValue: string;
+}
+declare class BarcodeDetector {
+  constructor(options?: BarcodeDetectorOptions);
+  detect(source: CanvasImageSource): Promise<DetectedBarcode[]>;
+}

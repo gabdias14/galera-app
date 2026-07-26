@@ -11,7 +11,7 @@ import {
   rememberGuestToken,
   setMyName,
 } from './data/identity';
-import { navigate, onRouteChange, parseRoute, inviteUrl, type ProTab, type Route } from './router';
+import { navigate, onRouteChange, parseRoute, inviteUrl, promoterUrl, type ProTab, type Route } from './router';
 import { fireStamp, fireToast } from './ui/fx';
 import { renderHome } from './views/home';
 import {
@@ -24,11 +24,25 @@ import {
 import { renderEvent } from './views/event';
 import { renderPro } from './views/pro';
 import { renderPrivacidade } from './views/privacy';
+import { renderPromoterView } from './views/promoterView';
 import { renderDoor } from './views/door';
-import { buildRecapData, canvasToBlob, recapFileName, renderRecap } from './lib/recap';
+import {
+  buildCountdownData,
+  buildRecapData,
+  buildSeasonRecapData,
+  canvasToBlob,
+  recapFileName,
+  renderCountdownRecap,
+  renderRecap,
+  renderSeasonRecap,
+} from './lib/recap';
 import { WALK_IN_CODE, buildContacts, filterAudience, scoreContacts, type Tier } from './lib/audience';
 import { campaignMessage, reminderMessage } from './lib/messages';
 import { normalizePhoneBR, waLink } from './lib/phone';
+import { guestQrPayload, parseGuestQrPayload, qrDataUrl } from './lib/qr';
+import { normalizeDocLast4 } from './lib/doc';
+import { isNetworkError } from './lib/net';
+import { enqueueCheckIn, queueForEvent, removeFromQueue } from './data/offlineQueue';
 import { initAnalytics, installErrorReporting, track } from './lib/analytics';
 import { sameName } from './lib/format';
 import { NameTakenError } from './types';
@@ -39,6 +53,14 @@ const data = getAdapter();
 let unsubscribe: (() => void) | null = null;
 let recapBlob: Blob | null = null;
 let lastRenderedRoute = '';
+
+/**
+ * Último estado bom de cada rolê aberto nesta aba. Não sobrevive a um reload
+ * da página (isso pediria Service Worker + IndexedDB — fica pro próximo
+ * passo do backlog #12); resolve o caso comum: a rede cai com a portaria já
+ * carregada, o app continua funcionando com o que já tinha em mãos.
+ */
+const eventCache = new Map<string, EventRecord>();
 
 /* ===================== render ===================== */
 
@@ -72,6 +94,7 @@ function render(): void {
     app.innerHTML = renderCreate();
     wireCreatePreview();
   } else if (route.name === 'privacidade') app.innerHTML = renderPrivacidade();
+  else if (route.name === 'promoter') app.innerHTML = renderPromoterView();
   else if (route.name === 'pro') app.innerHTML = renderPro();
   else if (route.name === 'door') {
     app.innerHTML = state.loading
@@ -99,6 +122,7 @@ function messageOf(err: unknown): string {
 async function loadRoute(route: Route): Promise<void> {
   unsubscribe?.();
   unsubscribe = null;
+  stopScanner();
   state.route = route;
   state.error = null;
 
@@ -132,6 +156,20 @@ async function loadRoute(route: Route): Promise<void> {
   }
 
   if (route.name === 'privacidade') {
+    state.loading = false;
+    render();
+    return;
+  }
+
+  if (route.name === 'promoter') {
+    state.loading = true;
+    state.promoterView = null;
+    render();
+    try {
+      state.promoterView = await data.getPromoterView(route.token);
+    } catch (err) {
+      state.error = messageOf(err);
+    }
     state.loading = false;
     render();
     return;
@@ -179,15 +217,24 @@ async function loadRoute(route: Route): Promise<void> {
     const ev = await data.getEvent(route.id);
     state.event = ev;
     if (ev) {
+      eventCache.set(ev.id, ev);
       addKnownEvent(ev.id);
       state.guestMode = route.name === 'event' ? !ev.isHost : false;
       if (ev.isHost) state.outbox = await data.listOutbox(ev.id);
       // conta a abertura do link do promoter — só uma vez por visita
       if (route.name === 'event' && route.code) await data.registerLinkOpen(ev.id, route.code);
       unsubscribe = data.subscribe(ev.id, () => void refreshEvent());
+      if (route.name === 'door') void flushOfflineQueue();
     }
   } catch (err) {
-    state.error = messageOf(err);
+    const cached = eventCache.get(route.id);
+    if (cached && isNetworkError(err)) {
+      state.event = cached;
+      state.error = 'Sem internet — mostrando os últimos dados salvos neste aparelho.';
+      if (route.name === 'door') void flushOfflineQueue();
+    } else {
+      state.error = messageOf(err);
+    }
   }
   state.loading = false;
   render();
@@ -226,9 +273,11 @@ async function refreshEvent(): Promise<void> {
   if (route.name !== 'event' && route.name !== 'door') return;
   try {
     state.event = await data.getEvent(route.id);
+    if (state.event) eventCache.set(state.event.id, state.event);
     if (state.event?.isHost) state.outbox = await data.listOutbox(route.id);
     render();
   } catch (err) {
+    // sem rede: mantém o que já estava na tela — não apaga o trabalho da portaria
     console.warn('[galera] falha ao atualizar o rolê:', err);
   }
 }
@@ -258,21 +307,28 @@ function closeRecap(): void {
   state.recapOpen = false;
   state.recapLoading = false;
   state.recapUrl = null;
+  state.recapTitle = '';
+  state.recapEventId = null;
   recapBlob = null;
 }
 
-async function openRecap(): Promise<void> {
+async function openRecap(variant: 'padrao' | 'contagem' = 'padrao'): Promise<void> {
   const ev = state.event;
   if (!ev) return;
   state.recapOpen = true;
   state.recapLoading = true;
   state.recapUrl = null;
+  state.recapTitle = ev.title;
+  state.recapEventId = ev.id;
   render();
   try {
-    const canvas = await renderRecap(buildRecapData(ev));
+    const canvas =
+      variant === 'contagem'
+        ? await renderCountdownRecap(buildCountdownData(ev))
+        : await renderRecap(buildRecapData(ev));
     recapBlob = await canvasToBlob(canvas);
     state.recapUrl = URL.createObjectURL(recapBlob);
-    track('recap_gerado', { comFotos: ev.photos.some((p) => !!p.url) }, ev.id);
+    track('recap_gerado', { variant, comFotos: ev.photos.some((p) => !!p.url) }, ev.id);
   } catch (err) {
     console.error('[galera] recap:', err);
     state.recapUrl = null;
@@ -281,19 +337,45 @@ async function openRecap(): Promise<void> {
   render();
 }
 
+/** Recap da temporada: agrega as edições passadas da produtora aberta no Pro. */
+async function openSeasonRecap(): Promise<void> {
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (!org) return;
+  state.recapOpen = true;
+  state.recapLoading = true;
+  state.recapUrl = null;
+  state.recapTitle = `${org.name} — temporada`;
+  state.recapEventId = null;
+  render();
+  try {
+    const canvas = await renderSeasonRecap(buildSeasonRecapData(org.name, state.orgEvents));
+    recapBlob = await canvasToBlob(canvas);
+    state.recapUrl = URL.createObjectURL(recapBlob);
+    track('recap_gerado', { variant: 'temporada' });
+  } catch (err) {
+    console.error('[galera] recap de temporada:', err);
+    state.recapUrl = null;
+  }
+  state.recapLoading = false;
+  render();
+}
+
 async function shareRecap(): Promise<void> {
-  const ev = state.event;
-  if (!recapBlob || !ev) return;
-  const file = new File([recapBlob], recapFileName(ev.title), { type: 'image/png' });
+  if (!recapBlob) return;
+  const eventId = state.recapEventId;
+  const file = new File([recapBlob], recapFileName(state.recapTitle), { type: 'image/png' });
+  const linkLine = eventId
+    ? `\n\nCrie o seu: ${inviteUrl(eventId, null, 'recap')}`
+    : `\n\nCrie o seu: ${location.origin}${location.pathname}?src=recap`;
   const shareData: ShareData = {
     files: [file],
-    title: ev.title,
-    text: `${ev.emoji} ${ev.title} — criado no Galera. Crie o seu: ${inviteUrl(ev.id, null, 'recap')}`,
+    title: state.recapTitle,
+    text: `${state.recapTitle} — criado no Galera.${linkLine}`,
   };
   if (navigator.canShare?.(shareData)) {
     try {
       await navigator.share(shareData);
-      track('recap_compartilhado', { method: 'share' }, ev.id);
+      track('recap_compartilhado', { method: 'share' }, eventId);
       return;
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -304,13 +386,12 @@ async function shareRecap(): Promise<void> {
 }
 
 function downloadRecap(): void {
-  const ev = state.event;
-  if (!state.recapUrl || !ev) return;
+  if (!state.recapUrl) return;
   const a = document.createElement('a');
   a.href = state.recapUrl;
-  a.download = recapFileName(ev.title);
+  a.download = recapFileName(state.recapTitle);
   a.click();
-  track('recap_compartilhado', { method: 'download' }, ev.id);
+  track('recap_compartilhado', { method: 'download' }, state.recapEventId);
 }
 
 /* ===================== campanha e mensagens ===================== */
@@ -390,6 +471,38 @@ async function sendNext(): Promise<void> {
   await sendMessage(next.id);
 }
 
+/**
+ * Exporta o público filtrado — reduz a sensação de aprisionamento no plano
+ * Pro e é a saída honesta pra quem quer levar a base pra outra ferramenta.
+ */
+function exportAudienceCsv(): void {
+  const list = filterAudience(state.audience, state.audienceFilter);
+  if (!list.length) return;
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = [
+    'nome,telefone,whatsapp_autorizado,tier,score,confirmados,presencas,receita,ultima_vez',
+    ...list.map((c) =>
+      [
+        esc(c.name),
+        esc(c.phone ?? ''),
+        esc(c.waOptIn ? 'sim' : 'nao'),
+        esc(c.tier),
+        esc(c.score),
+        esc(c.confirmed),
+        esc(c.attended),
+        esc(c.revenue),
+        esc(c.lastSeen ?? ''),
+      ].join(','),
+    ),
+  ].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'publico-galera.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportCampaignCsv(): void {
   const rows = state.outbox.filter((m) => m.kind === 'campanha');
   if (!rows.length) return;
@@ -418,6 +531,9 @@ document.addEventListener('click', (e) => {
       navigate({ name: 'home' });
       break;
     case 'go-create':
+      // "source" só existe no CTA pós-evento — mede se ver o rolê de outra
+      // pessoa converte em criar o próprio (fecha o loop do backlog #10)
+      if (target.getAttribute('data-source')) track('cta_criar_clicado', { origem: target.getAttribute('data-source') });
       navigate({ name: 'create' });
       break;
     case 'go-pro':
@@ -473,6 +589,9 @@ document.addEventListener('click', (e) => {
     case 'copy-guest-link':
       void copyToClipboard(target, inviteUrl(id, target.getAttribute('data-code')));
       break;
+    case 'copy-promoter-link':
+      void copyToClipboard(target, promoterUrl(target.getAttribute('data-token') ?? ''));
+      break;
     case 'share-guest-link': {
       const url = inviteUrl(id, target.getAttribute('data-code'));
       const ev = state.event;
@@ -502,7 +621,10 @@ document.addEventListener('click', (e) => {
       render();
       break;
     case 'open-recap':
-      void openRecap();
+      void openRecap((target.getAttribute('data-variant') as 'padrao' | 'contagem') ?? 'padrao');
+      break;
+    case 'open-season-recap':
+      void openSeasonRecap();
       break;
     case 'share-recap':
       e.stopPropagation();
@@ -528,6 +650,13 @@ document.addEventListener('click', (e) => {
       render();
       break;
     }
+    case 'suggest-winback':
+      state.audienceFilter = { ...state.audienceFilter, tiers: ['risco', 'dormente'] };
+      render();
+      break;
+    case 'export-audience':
+      exportAudienceCsv();
+      break;
     case 'build-campaign':
       void buildCampaign(id);
       break;
@@ -556,13 +685,21 @@ document.addEventListener('click', (e) => {
     case 'checkin':
       void doCheckIn(id);
       break;
-    case 'undo-checkin': {
-      const ev = state.event;
-      if (ev) void withBusy(() => data.undoCheckIn(ev.id, id));
+    case 'undo-checkin':
+      void doUndoCheckIn(id);
       break;
-    }
     case 'walk-in':
       void walkIn();
+      break;
+    case 'show-my-qr':
+      void showMyQr(target.getAttribute('data-guest'));
+      break;
+    case 'open-scanner':
+      void openScanner();
+      break;
+    case 'close-scanner':
+      stopScanner();
+      render();
       break;
 
     default:
@@ -683,6 +820,8 @@ async function submitRsvp(status: RsvpStatus): Promise<void> {
   }
   // sem número não existe opt-in: o consentimento precisa de um destino
   const waOptIn = !!optInInput?.checked && !!phone;
+  const docInput = document.getElementById('guestDocInput') as HTMLInputElement | null;
+  const docLast4 = docInput?.value ? normalizeDocLast4(docInput.value) : null;
 
   state.myName = name;
   setMyName(name);
@@ -695,6 +834,7 @@ async function submitRsvp(status: RsvpStatus): Promise<void> {
       waOptIn,
       linkCode: state.linkCode,
       token: guestTokenFor(ev.id),
+      docLast4,
     });
     rememberGuestToken(ev.id, result.token, result.guestId);
     track('rsvp', { status }, ev.id);
@@ -720,11 +860,184 @@ function doorAmount(ev: EventRecord): number {
   return Number.isFinite(value) && value >= 0 ? value : ev.ticketPrice;
 }
 
+/**
+ * Check-in que não para quando a rede da festa cai (Supabase apenas — o modo
+ * local já é 100% offline por natureza). Falha de rede vira fila local com
+ * reflexo otimista na tela; falha de verdade (validação etc.) vira erro normal.
+ */
 async function doCheckIn(guestId: string): Promise<void> {
   const ev = state.event;
-  if (!ev) return;
+  if (!ev || state.busy) return;
+  const guest = ev.guests.find((g) => g.id === guestId);
+  if (!guest) return;
   const amount = doorAmount(ev);
-  await withBusy(() => data.checkIn(ev.id, guestId, amount));
+
+  state.busy = true;
+  state.error = null;
+  render();
+  try {
+    await data.checkIn(ev.id, guestId, amount);
+    state.busy = false;
+    await refreshEvent();
+    render();
+  } catch (err) {
+    state.busy = false;
+    if (data.kind === 'supabase' && isNetworkError(err)) {
+      enqueueCheckIn({ eventId: ev.id, guestId, guestName: guest.name, amountPaid: amount, action: 'checkin' });
+      guest.checkedInAt = new Date().toISOString();
+      guest.amountPaid = amount;
+      fireToast(`${guest.name} entrou — sem rede, sincroniza depois 📶`);
+      render();
+    } else {
+      state.error = messageOf(err);
+      render();
+    }
+  }
+}
+
+async function doUndoCheckIn(guestId: string): Promise<void> {
+  const ev = state.event;
+  if (!ev || state.busy) return;
+  const guest = ev.guests.find((g) => g.id === guestId);
+  if (!guest) return;
+
+  state.busy = true;
+  state.error = null;
+  render();
+  try {
+    await data.undoCheckIn(ev.id, guestId);
+    state.busy = false;
+    await refreshEvent();
+    render();
+  } catch (err) {
+    state.busy = false;
+    if (data.kind === 'supabase' && isNetworkError(err)) {
+      enqueueCheckIn({ eventId: ev.id, guestId, guestName: guest.name, amountPaid: 0, action: 'undo' });
+      guest.checkedInAt = null;
+      guest.amountPaid = 0;
+      render();
+    } else {
+      state.error = messageOf(err);
+      render();
+    }
+  }
+}
+
+/** Tenta esvaziar a fila offline do rolê aberto. Para no primeiro item que ainda falhar. */
+async function flushOfflineQueue(): Promise<void> {
+  const ev = state.event;
+  if (!ev || data.kind !== 'supabase') return;
+  const pending = queueForEvent(ev.id);
+  if (!pending.length) return;
+
+  let synced = 0;
+  for (const item of pending) {
+    try {
+      if (item.action === 'checkin') await data.checkIn(item.eventId, item.guestId, item.amountPaid);
+      else await data.undoCheckIn(item.eventId, item.guestId);
+      removeFromQueue(item.id);
+      synced += 1;
+    } catch {
+      break; // ainda sem rede — tenta de novo na próxima chamada
+    }
+  }
+  if (synced > 0) {
+    fireToast(`${synced} ${synced === 1 ? 'check-in sincronizado' : 'check-ins sincronizados'} 📶`);
+    await refreshEvent();
+    render();
+  }
+}
+
+/** QR de entrada do convidado — mostra/esconde sem precisar re-render completo. */
+async function showMyQr(guestId: string | null): Promise<void> {
+  const ev = state.event;
+  if (!ev || !guestId) return;
+  const box = document.getElementById('myQrBox');
+  if (!box) return;
+  if (box.style.display !== 'none') {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const url = await qrDataUrl(guestQrPayload(ev.id, guestId));
+  box.innerHTML =
+    `<img src="${url}" width="200" height="200" alt="QR de entrada">` +
+    '<p>Mostra isso na entrada — a portaria escaneia e você entra na hora.</p>';
+  box.style.display = 'block';
+}
+
+/* ---------- scanner de QR na portaria ---------- */
+
+let scannerStream: MediaStream | null = null;
+let scannerRaf: number | null = null;
+
+function stopScanner(): void {
+  state.doorScannerOpen = false;
+  if (scannerRaf !== null) cancelAnimationFrame(scannerRaf);
+  scannerRaf = null;
+  scannerStream?.getTracks().forEach((t) => t.stop());
+  scannerStream = null;
+}
+
+async function openScanner(): Promise<void> {
+  state.doorScannerError = null;
+  state.doorScannerOpen = true;
+  render();
+
+  try {
+    scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch {
+    state.doorScannerError = 'Não consegui acessar a câmera. Confirme a permissão do navegador.';
+    render();
+    return;
+  }
+  const video = document.getElementById('qrVideo') as HTMLVideoElement | null;
+  if (!video) {
+    stopScanner();
+    return;
+  }
+  video.srcObject = scannerStream;
+
+  const detector = new BarcodeDetector({ formats: ['qr_code'] });
+  const scanLoop = async () => {
+    if (!state.doorScannerOpen) return;
+    try {
+      const codes = await detector.detect(video);
+      if (codes.length) {
+        await handleScannedCode(codes[0].rawValue);
+        return; // handleScannedCode fecha o scanner quando acha alguém
+      }
+    } catch {
+      /* frame ainda não decodificável — tenta de novo no próximo quadro */
+    }
+    scannerRaf = requestAnimationFrame(() => void scanLoop());
+  };
+  scannerRaf = requestAnimationFrame(() => void scanLoop());
+}
+
+async function handleScannedCode(text: string): Promise<void> {
+  const ev = state.event;
+  if (!ev) return;
+  const parsed = parseGuestQrPayload(text);
+  if (!parsed || parsed.eventId !== ev.id) {
+    state.doorScannerError = 'Esse QR não é deste rolê.';
+    render();
+    return;
+  }
+  const guest = ev.guests.find((g) => g.id === parsed.guestId);
+  if (!guest) {
+    state.doorScannerError = 'Convidado não encontrado na lista.';
+    render();
+    return;
+  }
+  stopScanner();
+  render();
+  if (guest.checkedInAt) {
+    fireToast(`${guest.name} já tinha entrado ✓`);
+    return;
+  }
+  await doCheckIn(guest.id);
+  fireToast(`${guest.name} entrou 🎉`);
 }
 
 async function walkIn(): Promise<void> {
@@ -895,6 +1208,8 @@ document.addEventListener('input', (e) => {
 /* ===================== boot ===================== */
 
 onRouteChange((route) => void loadRoute(route));
+window.addEventListener('online', () => void flushOfflineQueue());
+setInterval(() => void flushOfflineQueue(), 20_000);
 
 async function boot(): Promise<void> {
   state.backend = data.kind;

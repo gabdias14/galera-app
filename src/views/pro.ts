@@ -14,7 +14,7 @@ import {
   projectAudience,
   promoterStats,
 } from '../lib/audience';
-import { logoHtml } from './components';
+import { logoHtml, recapModalHtml } from './components';
 
 const ALL_TIERS: Tier[] = ['vip', 'fiel', 'promissor', 'risco', 'dormente'];
 
@@ -87,7 +87,11 @@ function renderPainel(): string {
     (upcoming.length
       ? `<div class="section-label">Próximos</div>${upcoming.map(eventRow).join('')}`
       : '<div class="empty-note">Nenhuma edição futura. Crie uma pra poder chamar a audiência.</div>') +
-    `<div class="section-label">Histórico</div>${past.length ? past.map(eventRow).join('') : '<div class="empty-note">Sem edições passadas ainda.</div>'}`
+    `<div class="section-label">Histórico</div>` +
+    (past.length
+      ? past.map(eventRow).join('') +
+        '<button class="pro-btn pro-btn--go" style="margin-top:6px;" data-action="open-season-recap">✨ Gerar recap da temporada</button>'
+      : '<div class="empty-note">Sem edições passadas ainda.</div>')
   );
 }
 
@@ -213,6 +217,8 @@ function renderPublico(): string {
     })
     .join('');
 
+  const dormantes = state.audience.filter((c) => c.tier === 'dormente' || c.tier === 'risco').length;
+
   return (
     '<div class="pro-panel">' +
     '<h3>Quem chamar</h3>' +
@@ -223,6 +229,14 @@ function renderPublico(): string {
     `<div class="pro-field"><label>Buscar</label><input class="pro-input" id="audienceSearch" placeholder="nome" value="${escapeHtml(filter.search ?? '')}"></div>` +
     `<div class="pro-field"><label>Quantas pessoas</label><input class="pro-input" id="audienceSize" type="number" min="1" max="500" value="${filter.size ?? 50}"></div>` +
     '</div>' +
+    (dormantes > 0
+      ? '<div class="pro-form-row" style="margin-top:4px;">' +
+        `<button class="pro-btn" data-action="suggest-winback">🔔 Sugestão de resgate (${dormantes} sumidos/em risco)</button>` +
+        '<button class="pro-btn pro-btn--ghost" data-action="export-audience">⬇️ Exportar CSV</button>' +
+        '</div>'
+      : '<div class="pro-form-row" style="margin-top:4px;">' +
+        '<button class="pro-btn pro-btn--ghost" data-action="export-audience">⬇️ Exportar CSV</button>' +
+        '</div>') +
     '</div>' +
     campaignPanel() +
     `<div class="section-label">${list.length} ${plural(list.length, 'pessoa')} no filtro</div>` +
@@ -246,6 +260,7 @@ function renderPromoters(): string {
         `<div class="link-meta">Conversão ${Math.round(s.conversion * 100)}% · Receita ${formatMoneyShort(s.revenue)} · Comissão ${s.promoter.commissionPct}% = <strong>R$ ${formatMoney(s.commission)}</strong></div>` +
         '</div>' +
         '<div class="link-actions">' +
+        `<button data-action="copy-promoter-link" data-token="${s.promoter.publicToken}">Copiar link do promoter</button>` +
         `<button data-action="toggle-promoter" data-id="${s.promoter.id}">${s.promoter.active ? 'Desativar' : 'Reativar'}</button>` +
         '</div></div>',
     )
@@ -254,7 +269,8 @@ function renderPromoters(): string {
   return (
     '<div class="pro-panel">' +
     '<h3>Novo promoter</h3>' +
-    '<div class="helptext">Cada promoter ganha links próprios por rolê — é o link que credita a venda e calcula a comissão.</div>' +
+    '<div class="helptext">Cada promoter ganha links próprios por rolê — é o link que credita a venda e calcula a comissão. ' +
+    'Manda também o "link do promoter": ele vê os números dele, sem precisar de login.</div>' +
     '<form class="pro-form-row" id="promoterForm">' +
     '<div class="pro-field"><label>Nome</label><input class="pro-input" id="promoterName" placeholder="Nome do promoter" required></div>' +
     '<div class="pro-field"><label>WhatsApp</label><input class="pro-input" id="promoterPhone" placeholder="(11) 99999-0000"></div>' +
@@ -295,6 +311,7 @@ export function renderPro(): string {
     topbar() +
     (state.error ? `<div class="error-note">${escapeHtml(state.error)}</div>` : '') +
     tabs() +
-    body
+    body +
+    recapModalHtml()
   );
 }

@@ -4,6 +4,8 @@ import { escapeHtml, initials, normalizeName, plural, sameName } from '../lib/fo
 import { formatMoneyShort } from '../lib/messages';
 import { doorStats } from '../lib/audience';
 import { longDate } from '../lib/date';
+import { scannerSupported } from '../lib/qr';
+import { queueForEvent } from '../data/offlineQueue';
 
 const STATUS_LABEL: Record<string, string> = {
   vou: 'confirmou',
@@ -18,10 +20,17 @@ const STATUS_LABEL: Record<string, string> = {
 export function renderDoor(ev: EventRecord): string {
   const stats = doorStats(ev);
   const term = normalizeName(state.doorSearch);
+  // busca só de números = últimos dígitos do CPF/RG, pra desempatar homônimo
+  // sem precisar de rede (docs/melhorias.md #12)
+  const digits = state.doorSearch.replace(/\D/g, '');
   const linkLabel = new Map(ev.links.map((l) => [l.code, l.label]));
 
   const matches = ev.guests
-    .filter((g) => !term || normalizeName(g.name).includes(term))
+    .filter((g) => {
+      if (!term) return true;
+      if (normalizeName(g.name).includes(term)) return true;
+      return digits.length >= 3 && !!g.docLast4 && g.docLast4.includes(digits);
+    })
     .sort((a, b) => {
       // quem ainda não entrou primeiro; depois confirmados; depois alfabético
       if (!!a.checkedInAt !== !!b.checkedInAt) return a.checkedInAt ? 1 : -1;
@@ -37,12 +46,13 @@ export function renderDoor(ev: EventRecord): string {
     .slice(0, 60)
     .map((g) => {
       const origin = g.linkCode ? linkLabel.get(g.linkCode) : null;
+      const docHint = g.docLast4 ? ` · doc ••${g.docLast4}` : '';
       return (
         `<div class="door-row${g.checkedInAt ? ' is-in' : ''}">` +
         `<div class="avatar" style="background:${g.color}">${initials(g.name)}</div>` +
         '<div class="door-row__main">' +
         `<div class="door-row__name">${escapeHtml(g.name)}</div>` +
-        `<div class="door-row__meta">${STATUS_LABEL[g.status]}${origin ? ` · via ${escapeHtml(origin)}` : ''}` +
+        `<div class="door-row__meta">${STATUS_LABEL[g.status]}${origin ? ` · via ${escapeHtml(origin)}` : ''}${docHint}` +
         `${g.checkedInAt ? ` · entrou${g.amountPaid ? ` · R$ ${g.amountPaid}` : ''}` : ''}</div>` +
         '</div>' +
         (g.checkedInAt
@@ -72,6 +82,7 @@ export function renderDoor(ev: EventRecord): string {
     `<h1 style="font-size:clamp(1.4rem,4vw,1.9rem); margin:8px 0 4px;">${ev.emoji} ${escapeHtml(ev.title)}</h1>` +
     `<p style="color:var(--muted); margin-bottom:18px;">${longDate(ev.date)} · ${ev.time}</p>` +
     (state.error ? `<div class="error-note">${escapeHtml(state.error)}</div>` : '') +
+    offlineBannerHtml(ev.id) +
     '<div class="door-bar">' +
     '<div class="kpi-grid" style="margin-bottom:14px;">' +
     `<div class="kpi"><b>${stats.present}</b><span>na casa</span><small>${stats.walkIns} sem confirmar antes</small></div>` +
@@ -80,14 +91,44 @@ export function renderDoor(ev: EventRecord): string {
     lotacao +
     '</div>' +
     '<div class="pro-form-row" style="margin-bottom:10px;">' +
-    `<div class="pro-field" style="flex:2;"><label>Buscar convidado</label><input class="door-search" id="doorSearch" placeholder="Digite o nome..." value="${escapeHtml(state.doorSearch)}" autocomplete="off" style="margin-bottom:0;"></div>` +
+    `<div class="pro-field" style="flex:2;"><label>Buscar convidado</label><input class="door-search" id="doorSearch" placeholder="Nome ou últimos dígitos do CPF/RG..." value="${escapeHtml(state.doorSearch)}" autocomplete="off" style="margin-bottom:0;"></div>` +
     `<div class="pro-field" style="max-width:150px;"><label>Valor cobrado</label><input class="pro-input" id="doorAmount" type="number" min="0" step="5" value="${state.doorAmount ?? ev.ticketPrice}"></div>` +
+    (scannerSupported()
+      ? '<div class="pro-field" style="max-width:130px;"><label>&nbsp;</label><button class="pro-btn pro-btn--go" style="width:100%;" data-action="open-scanner">📷 Escanear QR</button></div>'
+      : '') +
     '</div>' +
     '</div>' +
     walkIn +
     (rows || '<div class="empty-note">Ninguém com esse nome na lista.</div>') +
     (matches.length > 60
       ? `<div class="empty-note">+${matches.length - 60} ${plural(matches.length - 60, 'convidado')} — refine a busca</div>`
-      : '')
+      : '') +
+    scannerModalHtml()
+  );
+}
+
+function offlineBannerHtml(eventId: string): string {
+  const pending = queueForEvent(eventId);
+  if (!pending.length) return '';
+  return (
+    '<div class="banner" style="border-color:var(--yellow); background:rgba(255,201,77,.14);">' +
+    `📶 <strong>${pending.length} ${plural(pending.length, 'check-in')}</strong> feito${pending.length === 1 ? '' : 's'} sem internet — ` +
+    'já contam no contador abaixo e sincronizam sozinhos assim que a rede voltar.' +
+    '</div>'
+  );
+}
+
+function scannerModalHtml(): string {
+  if (!state.doorScannerOpen) return '';
+  return (
+    '<div class="scanner-modal">' +
+    '<video id="qrVideo" autoplay muted playsinline></video>' +
+    `<div class="scanner-modal__hint">${
+      state.doorScannerError
+        ? escapeHtml(state.doorScannerError)
+        : 'Aponte pro QR de entrada do convidado.'
+    }</div>` +
+    '<button class="pro-btn pro-btn--ghost" data-action="close-scanner">Fechar</button>' +
+    '</div>'
   );
 }

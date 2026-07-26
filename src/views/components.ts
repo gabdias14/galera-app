@@ -62,11 +62,16 @@ export function inviteCardHtml(ev: EventRecord, opts: { showRsvp?: boolean } = {
       const waLine = existing.waOptIn
         ? '<small>✅ você recebe os avisos no WhatsApp</small>'
         : '<small>sem avisos no WhatsApp — dá pra ativar em "alterar resposta"</small>';
+      const qrButton =
+        existing.status === 'vou'
+          ? `<button class="link-btn" data-action="show-my-qr" data-guest="${existing.id}">QR de entrada</button>`
+          : '';
       rsvpHtml =
         '<div class="rsvp-block"><div class="confirmed-panel">' +
         `<div class="confirmed-panel__msg">Sua resposta: ${label}<small>${escapeHtml(existing.name)}</small>${waLine}</div>` +
-        '<button class="link-btn" data-action="change-rsvp">alterar resposta</button>' +
-        '</div></div>';
+        `<div style="display:flex; gap:14px; flex-wrap:wrap;">${qrButton}<button class="link-btn" data-action="change-rsvp">alterar resposta</button></div>` +
+        '</div></div>' +
+        (existing.status === 'vou' ? `<div class="qr-box" id="myQrBox" style="display:none;"></div>` : '');
     } else {
       rsvpHtml =
         '<div class="rsvp-block">' +
@@ -75,6 +80,8 @@ export function inviteCardHtml(ev: EventRecord, opts: { showRsvp?: boolean } = {
         '<div class="name-error" id="rsvpError" style="display:none;">Digite seu nome antes de responder 🙂</div>' +
         '<input type="tel" class="name-input" id="guestPhoneInput" placeholder="WhatsApp (opcional) — (11) 99999-0000" autocomplete="tel">' +
         '<div class="name-error" id="phoneError" style="display:none;">Esse número não parece um WhatsApp brasileiro 🤔</div>' +
+        '<input type="text" class="name-input" id="guestDocInput" placeholder="Últimos 4 dígitos do CPF/RG (opcional)" inputmode="numeric" maxlength="20">' +
+        '<div class="helptext" style="margin:-6px 0 12px;">Só pra confirmar você na entrada se tiver alguém com nome parecido. Nunca aparece pra mais ninguém — nem o documento completo é guardado.</div>' +
         '<div class="optin">' +
         '<input type="checkbox" id="guestWaOptIn">' +
         '<label for="guestWaOptIn">Quero receber lembrete do rolê no WhatsApp' +

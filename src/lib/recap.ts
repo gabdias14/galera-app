@@ -1,4 +1,5 @@
 import type { EventRecord } from '../types';
+import { buildContacts, scoreContacts } from './audience';
 import { daysUntil, longDate } from './date';
 import { initials, avatarColor, plural } from './format';
 import { loadImage } from './image';
@@ -401,7 +402,14 @@ export async function renderRecap(data: RecapData): Promise<HTMLCanvasElement> {
     drawQuoteCard(ctx, data.description, mosaicTop, mosaicSpace);
   }
 
-  // rodapé — marca (motor de crescimento, não decoração)
+  drawFooter(ctx);
+
+  return canvas;
+}
+
+/** Marca do Galera — motor de distribuição, não decoração. Igual nas 3 variações. */
+function drawFooter(ctx: CanvasRenderingContext2D): void {
+  ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,.16)';
   roundRect(ctx, RECAP_W / 2 - 250, RECAP_H - 168, 500, 96, 48);
   ctx.fill();
@@ -411,8 +419,6 @@ export async function renderRecap(data: RecapData): Promise<HTMLCanvasElement> {
   ctx.font = `600 30px "${FONT_BODY}", sans-serif`;
   ctx.fillStyle = 'rgba(255,255,255,.85)';
   ctx.fillText('crie o seu rolê', RECAP_W / 2 + 100, RECAP_H - 104);
-
-  return canvas;
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -430,4 +436,203 @@ export function recapFileName(title: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 40);
   return `recap-${slug || 'role'}.png`;
+}
+
+/* ===================== variação: contagem regressiva ===================== */
+
+export interface CountdownData {
+  emoji: string;
+  title: string;
+  dateLabel: string;
+  timeLabel: string;
+  location: string;
+  daysLeft: number;
+  confirmedCount: number;
+  maybeCount: number;
+  capacity: number | null;
+}
+
+/**
+ * Pré-evento: o Recap não precisa esperar a festa acabar pra virar convite —
+ * a hype antes é o que traz gente nova a tempo de confirmar (backlog #8/#10).
+ */
+export function buildCountdownData(ev: EventRecord, now: Date = new Date()): CountdownData {
+  return {
+    emoji: ev.emoji,
+    title: ev.title,
+    dateLabel: longDate(ev.date),
+    timeLabel: ev.time,
+    location: ev.location,
+    daysLeft: Math.max(0, daysUntil(ev.date, now)),
+    confirmedCount: ev.guests.filter((g) => g.status === 'vou').length,
+    maybeCount: ev.guests.filter((g) => g.status === 'talvez').length,
+    capacity: ev.capacity,
+  };
+}
+
+export async function renderCountdownRecap(data: CountdownData): Promise<HTMLCanvasElement> {
+  await ensureFonts();
+  const canvas = document.createElement('canvas');
+  canvas.width = RECAP_W;
+  canvas.height = RECAP_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D indisponível neste aparelho');
+
+  drawBackground(ctx);
+  drawLogo(ctx, 130);
+  ctx.textAlign = 'center';
+
+  ctx.font = `700 34px "${FONT_MONO}", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText('FALTAM', RECAP_W / 2, 280);
+
+  ctx.font = `800 420px "${FONT_TITLE}", sans-serif`;
+  ctx.fillStyle = '#FFFCF9';
+  ctx.fillText(String(data.daysLeft), RECAP_W / 2, 640);
+
+  ctx.font = `700 40px "${FONT_MONO}", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  ctx.fillText(data.daysLeft === 1 ? 'DIA' : 'DIAS', RECAP_W / 2, 700);
+
+  ctx.font = `800 76px "${FONT_TITLE}", sans-serif`;
+  ctx.fillStyle = '#FFFCF9';
+  let y = 830;
+  const titleLines = wrapText(ctx, `${data.emoji} ${data.title}`, RECAP_W - 160, 3);
+  titleLines.forEach((line) => {
+    ctx.fillText(line, RECAP_W / 2, y);
+    y += 88;
+  });
+
+  ctx.font = `700 34px "${FONT_MONO}", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText(`${data.dateLabel} · ${data.timeLabel}`, RECAP_W / 2, y + 20);
+  y += 66;
+  ctx.font = `500 32px "${FONT_BODY}", sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,.7)';
+  wrapText(ctx, data.location, RECAP_W - 200, 1).forEach((line) => {
+    ctx.fillText(line, RECAP_W / 2, y + 14);
+    y += 46;
+  });
+
+  y += 60;
+  ctx.fillStyle = 'rgba(255,255,255,.14)';
+  roundRect(ctx, 90, y, RECAP_W - 180, 190, 32);
+  ctx.fill();
+  ctx.fillStyle = '#FFFCF9';
+  ctx.font = `800 108px "${FONT_TITLE}", sans-serif`;
+  ctx.fillText(String(data.confirmedCount), RECAP_W / 2, y + 120);
+  ctx.font = `700 30px "${FONT_MONO}", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.82)';
+  const lotLine = data.capacity ? ` DE ${data.capacity}` : '';
+  ctx.fillText(`JÁ CONFIRMARAM${lotLine}`, RECAP_W / 2, y + 162);
+
+  drawFooter(ctx);
+  return canvas;
+}
+
+/* ===================== variação: recap da temporada ===================== */
+
+export interface SeasonRecapData {
+  orgName: string;
+  editionsCount: number;
+  totalAttendance: number;
+  totalRevenue: number;
+  topAttendees: string[];
+  periodLabel: string;
+}
+
+/**
+ * Fecha de uma vez os itens "temporada" e "top 3" do backlog #8: em vez de
+ * dois formatos, um recap só que junta as edições de uma produtora com quem
+ * mais apareceu nelas — é o material que a produtora posta pra fechar o ano.
+ */
+export function buildSeasonRecapData(orgName: string, events: EventRecord[], now: Date = new Date()): SeasonRecapData {
+  const past = events.filter((e) => daysUntil(e.date, now) < 0);
+  const contacts = scoreContacts(buildContacts(past, now), now);
+  const revenue = past.reduce(
+    (sum, ev) => sum + ev.guests.reduce((s, g) => s + (g.amountPaid || 0), 0),
+    0,
+  );
+  const attendance = past.reduce((sum, ev) => sum + ev.guests.filter((g) => g.checkedInAt).length, 0);
+  const dates = past.map((e) => e.date).sort();
+
+  return {
+    orgName,
+    editionsCount: past.length,
+    totalAttendance: attendance,
+    totalRevenue: revenue,
+    topAttendees: contacts.slice(0, 3).map((c) => c.name),
+    periodLabel:
+      dates.length > 1
+        ? `${longDate(dates[0]).split(', ')[1]} a ${longDate(dates[dates.length - 1]).split(', ')[1]}`
+        : dates[0]
+          ? longDate(dates[0])
+          : '',
+  };
+}
+
+function formatBRL(value: number): string {
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+}
+
+export async function renderSeasonRecap(data: SeasonRecapData): Promise<HTMLCanvasElement> {
+  await ensureFonts();
+  const canvas = document.createElement('canvas');
+  canvas.width = RECAP_W;
+  canvas.height = RECAP_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D indisponível neste aparelho');
+
+  drawBackground(ctx);
+  drawLogo(ctx, 130);
+  ctx.textAlign = 'center';
+
+  ctx.font = `700 32px "${FONT_MONO}", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText('RECAP DA TEMPORADA', RECAP_W / 2, 250);
+
+  ctx.font = `800 74px "${FONT_TITLE}", sans-serif`;
+  ctx.fillStyle = '#FFFCF9';
+  let y = 340;
+  wrapText(ctx, data.orgName, RECAP_W - 160, 2).forEach((line) => {
+    ctx.fillText(line, RECAP_W / 2, y);
+    y += 84;
+  });
+  if (data.periodLabel) {
+    ctx.font = `500 32px "${FONT_BODY}", sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.fillText(data.periodLabel, RECAP_W / 2, y + 14);
+    y += 60;
+  }
+
+  const stats: [string, string][] = [
+    [String(data.editionsCount), plural(data.editionsCount, 'EDIÇÃO', 'EDIÇÕES')],
+    [String(data.totalAttendance), plural(data.totalAttendance, 'PRESENÇA', 'PRESENÇAS')],
+    [`R$ ${formatBRL(data.totalRevenue)}`, 'EM RECEITA'],
+  ];
+  y += 50;
+  const boxH = 180;
+  stats.forEach(([value, label]) => {
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    roundRect(ctx, 90, y, RECAP_W - 180, boxH, 30);
+    ctx.fill();
+    ctx.fillStyle = '#FFFCF9';
+    ctx.font = `800 96px "${FONT_TITLE}", sans-serif`;
+    ctx.fillText(value, RECAP_W / 2, y + 110);
+    ctx.font = `700 30px "${FONT_MONO}", monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.fillText(label, RECAP_W / 2, y + 150);
+    y += boxH + 22;
+  });
+
+  if (data.topAttendees.length) {
+    y += 20;
+    ctx.font = `700 32px "${FONT_MONO}", monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.fillText('QUEM MAIS APARECEU', RECAP_W / 2, y);
+    drawAvatars(ctx, data.topAttendees, y + 90);
+  }
+
+  drawFooter(ctx);
+  return canvas;
 }

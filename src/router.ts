@@ -7,6 +7,7 @@ export type Route =
   | { name: 'edit'; id: string }
   | { name: 'door'; id: string }
   | { name: 'privacidade' }
+  | { name: 'promoter'; token: string }
   | { name: 'pro'; tab: ProTab };
 
 const PRO_TABS: ProTab[] = ['painel', 'publico', 'promoters'];
@@ -30,6 +31,7 @@ export function parseRoute(hash: string = location.hash): Route {
   }
   if (parts[0] === 'novo') return { name: 'create' };
   if (parts[0] === 'privacidade') return { name: 'privacidade' };
+  if (parts[0] === 'promoter' && parts[1]) return { name: 'promoter', token: parts[1] };
   if (parts[0] === 'pro') {
     const tab = PRO_TABS.find((t) => t === parts[1]) ?? 'painel';
     return { name: 'pro', tab };
@@ -45,6 +47,7 @@ export function routeToHash(route: Route): string {
   if (route.name === 'door') return `#/e/${encodeURIComponent(route.id)}/portaria`;
   if (route.name === 'edit') return `#/e/${encodeURIComponent(route.id)}/editar`;
   if (route.name === 'privacidade') return '#/privacidade';
+  if (route.name === 'promoter') return `#/promoter/${encodeURIComponent(route.token)}`;
   if (route.name === 'create') return '#/novo';
   if (route.name === 'pro') return `#/pro/${route.tab}`;
   return '#/';
@@ -75,4 +78,11 @@ export function inviteUrl(eventId: string, code?: string | null, src?: string): 
     : `/e/${encodeURIComponent(eventId)}`;
   const query = src ? `?src=${encodeURIComponent(src)}` : '';
   return `${clean}/${query}#${path}`;
+}
+
+/** Link que a produtora manda pro promoter — sem login, token na URL. */
+export function promoterUrl(publicToken: string): string {
+  const base = import.meta.env.VITE_PUBLIC_URL || `${location.origin}${location.pathname}`;
+  const clean = base.replace(/\/$/, '');
+  return `${clean}/#/promoter/${encodeURIComponent(publicToken)}`;
 }

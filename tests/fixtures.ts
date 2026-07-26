@@ -10,6 +10,7 @@ export function makeGuest(name: string, status: RsvpStatus, extra: Partial<Guest
     waOptIn: false,
     waOptInAt: null,
     linkCode: null,
+    docLast4: null,
     checkedInAt: null,
     amountPaid: 0,
     ...extra,

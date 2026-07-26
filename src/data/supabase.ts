@@ -10,6 +10,7 @@ import type {
   Photo,
   Poll,
   Promoter,
+  PromoterView,
   RsvpInput,
   RsvpResult,
   RsvpStatus,
@@ -66,6 +67,7 @@ interface EventRow {
     phone: string | null;
     wa_opt_in: boolean;
     wa_opt_in_at: string | null;
+    doc_last4: string | null;
   }[];
   checkins: { guest_id: string; checked_in_at: string; amount_paid: number | string }[];
 }
@@ -78,7 +80,7 @@ const EVENT_SELECT = `
   polls ( id, question, notified, poll_options ( id, text, position ), poll_votes ( option_id, voter_name ) ),
   photos ( id, url, caption, uploader ),
   guest_links ( id, event_id, promoter_id, code, label, max_uses, opens, active, created_at ),
-  guest_contacts ( guest_id, phone, wa_opt_in, wa_opt_in_at ),
+  guest_contacts ( guest_id, phone, wa_opt_in, wa_opt_in_at, doc_last4 ),
   checkins ( guest_id, checked_in_at, amount_paid )
 `;
 
@@ -146,6 +148,7 @@ interface PromoterRow {
   commission_pct: number | string;
   active: boolean;
   created_at: string;
+  public_token: string;
 }
 
 function toPromoter(row: PromoterRow): Promoter {
@@ -157,6 +160,7 @@ function toPromoter(row: PromoterRow): Promoter {
     commissionPct: num(row.commission_pct),
     active: row.active,
     createdAt: row.created_at,
+    publicToken: row.public_token,
   };
 }
 
@@ -227,6 +231,7 @@ export class SupabaseAdapter implements DataAdapter {
           waOptIn: contact?.wa_opt_in ?? false,
           waOptInAt: contact?.wa_opt_in_at ?? null,
           linkCode: g.link_code,
+          docLast4: contact?.doc_last4 ?? null,
           checkedInAt: checkin?.checked_in_at ?? null,
           amountPaid: num(checkin?.amount_paid),
         };
@@ -301,6 +306,7 @@ export class SupabaseAdapter implements DataAdapter {
         opt_in: !!input.waOptIn,
         link_code: input.linkCode ?? null,
         token: input.token ?? null,
+        doc_last4: input.docLast4 ?? null,
       })
       .single();
     if (error) {
@@ -450,7 +456,7 @@ export class SupabaseAdapter implements DataAdapter {
   async listPromoters(orgId: string): Promise<Promoter[]> {
     const { data, error } = await this.sb
       .from('promoters')
-      .select('id, org_id, name, phone, commission_pct, active, created_at')
+      .select('id, org_id, name, phone, commission_pct, active, created_at, public_token')
       .eq('org_id', orgId)
       .order('created_at');
     if (error) throw new Error(error.message);
@@ -466,10 +472,33 @@ export class SupabaseAdapter implements DataAdapter {
     const { data, error } = await this.sb
       .from('promoters')
       .insert({ org_id: orgId, name, phone, commission_pct: commissionPct })
-      .select('id, org_id, name, phone, commission_pct, active, created_at')
+      .select('id, org_id, name, phone, commission_pct, active, created_at, public_token')
       .single();
     if (error) throw new Error(error.message);
     return toPromoter(data as PromoterRow);
+  }
+
+  async getPromoterView(token: string): Promise<PromoterView | null> {
+    const { data, error } = await this.sb.rpc('get_promoter_view', { p_token: token });
+    if (error) throw new Error(error.message);
+    const row = (data as Record<string, unknown>[] | null)?.[0];
+    if (!row) return null;
+    const revenue = num(row.revenue as number | string);
+    const commissionPct = num(row.commission_pct as number | string);
+    const confirmed = Number(row.confirmed_count ?? 0);
+    const opens = Number(row.opens_count ?? 0);
+    return {
+      name: row.promoter_name as string,
+      commissionPct,
+      active: row.active as boolean,
+      links: Number(row.links_count ?? 0),
+      opens,
+      confirmed,
+      attended: Number(row.attended_count ?? 0),
+      revenue,
+      commission: Math.round(revenue * (commissionPct / 100) * 100) / 100,
+      conversion: opens > 0 ? confirmed / opens : 0,
+    };
   }
 
   async updatePromoter(

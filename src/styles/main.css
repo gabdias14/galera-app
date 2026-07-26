@@ -422,3 +422,13 @@ input,textarea{font-family:inherit;}
 /* template chips (onboarding do primeiro rolê) */
 .template-chip{background:rgba(27,16,48,.05); border:1.5px solid rgba(27,16,48,.12); border-radius:12px; padding:9px 14px; font-weight:700; font-size:.86rem; color:var(--ink);}
 .template-chip.is-selected{background:rgba(255,90,114,.16); border-color:var(--coral); color:var(--coral-dark);}
+
+/* QR de entrada (convidado) */
+.qr-box{background:var(--paper); border-radius:16px; padding:18px; text-align:center; margin-top:14px;}
+.qr-box img{border-radius:10px; display:block; margin:0 auto;}
+.qr-box p{font-size:.8rem; color:var(--ink-muted); margin-top:10px;}
+
+/* scanner (portaria) */
+.scanner-modal{position:fixed; inset:0; background:rgba(10,3,15,.94); z-index:70; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; gap:16px;}
+.scanner-modal video{width:100%; max-width:420px; border-radius:20px; background:#000;}
+.scanner-modal__hint{color:var(--paper); font-size:.9rem; text-align:center; max-width:340px;}

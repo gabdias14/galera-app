@@ -46,6 +46,7 @@ function guest(
     linkCode: extra.linkCode ?? null,
     checkedInAt: extra.checkedInAt ?? null,
     amountPaid: extra.amountPaid ?? 0,
+    docLast4: null,
   };
 }
 
@@ -285,9 +286,9 @@ function proOperation(hostId: string, rng: () => number): ProSeed {
   };
 
   const promoters: Promoter[] = [
-    { id: uid(), orgId: org.id, name: 'Rafa Menezes', phone: normalizePhoneBR('11 99111-2233'), commissionPct: 10, active: true, createdAt: isoTimeAgo(380) },
-    { id: uid(), orgId: org.id, name: 'Bibi Cortez', phone: normalizePhoneBR('11 99222-3344'), commissionPct: 12, active: true, createdAt: isoTimeAgo(300) },
-    { id: uid(), orgId: org.id, name: 'Léo Duarte', phone: normalizePhoneBR('21 99333-4455'), commissionPct: 8, active: true, createdAt: isoTimeAgo(120) },
+    { id: uid(), orgId: org.id, name: 'Rafa Menezes', phone: normalizePhoneBR('11 99111-2233'), commissionPct: 10, active: true, createdAt: isoTimeAgo(380), publicToken: uid() },
+    { id: uid(), orgId: org.id, name: 'Bibi Cortez', phone: normalizePhoneBR('11 99222-3344'), commissionPct: 12, active: true, createdAt: isoTimeAgo(300), publicToken: uid() },
+    { id: uid(), orgId: org.id, name: 'Léo Duarte', phone: normalizePhoneBR('21 99333-4455'), commissionPct: 8, active: true, createdAt: isoTimeAgo(120), publicToken: uid() },
   ];
 
   const editions: { title: string; emoji: string; days: number; price: number; color: ThemeColor }[] = [

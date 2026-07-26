@@ -66,6 +66,22 @@ test.describe('Galera Pro', () => {
     await expect(page.locator('.link-row')).toHaveCount(antes + 1);
   });
 
+  test('painel do promoter abre pelo link público, sem login', async ({ page }) => {
+    await page.goto('/#/pro/promoters');
+    await page.waitForSelector('.link-row');
+
+    await page.locator('.link-row [data-action="copy-promoter-link"]').first().click();
+    const token = await page
+      .locator('.link-row [data-action="copy-promoter-link"]')
+      .first()
+      .getAttribute('data-token');
+    const name = await page.locator('.link-row').first().locator('div[style*="font-weight:700"]').innerText();
+
+    await page.goto(`/#/promoter/${token}`);
+    await expect(page.locator('h1')).toContainText(name.replace(' (inativo)', ''));
+    await expect(page.locator('.kpi-grid')).toBeVisible();
+  });
+
   test('link de convidado credita quem confirmou por ele', async ({ page }) => {
     await page.goto('/#/pro/painel');
     await page.waitForSelector('.link-row');
@@ -127,5 +143,26 @@ test.describe('Galera Pro', () => {
     await page.click('[data-action="walk-in"]');
     await expect(presentes()).toHaveText(String(antes + 2));
     await expect(page.locator('.kpi').nth(0)).toContainText('1 sem confirmar antes');
+  });
+});
+
+test.describe('desempate por CPF/RG na portaria', () => {
+  test('busca por últimos dígitos do documento acha o convidado certo', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.evcard');
+    await page.locator('.evcard:not(.evcard--new)').first().click();
+    await page.click('[data-action="set-mode"][data-mode="guest"]');
+    await page.fill('#guestNameInput', 'Convidada Com Doc');
+    await page.fill('#guestDocInput', '123.456.789-77');
+    await page.click('[data-action="rsvp"][data-status="vou"]');
+    await expect(page.locator('.confirmed-panel__msg')).toContainText('Vou!');
+
+    await page.click('[data-action="set-mode"][data-mode="host"]');
+    await page.click('[data-action="open-door"]');
+    await page.waitForSelector('.door-row');
+    await page.fill('#doorSearch', '8977');
+    await expect(page.locator('.door-row')).toHaveCount(1);
+    await expect(page.locator('.door-row__name')).toContainText('Convidada Com Doc');
+    await expect(page.locator('.door-row__meta')).toContainText('doc ••8977');
   });
 });

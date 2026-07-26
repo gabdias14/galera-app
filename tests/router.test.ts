@@ -28,6 +28,10 @@ describe('parseRoute', () => {
     expect(parseRoute('#/e/abc/portaria')).toEqual({ name: 'door', id: 'abc' });
   });
 
+  it('lê o link público do promoter', () => {
+    expect(parseRoute('#/promoter/tok-abc123')).toEqual({ name: 'promoter', token: 'tok-abc123' });
+  });
+
   it('lê as abas do Galera Pro', () => {
     expect(parseRoute('#/pro')).toEqual({ name: 'pro', tab: 'painel' });
     expect(parseRoute('#/pro/publico')).toEqual({ name: 'pro', tab: 'publico' });
@@ -43,5 +47,8 @@ describe('parseRoute', () => {
 
     const portaria = { name: 'door', id: 'xyz' } as const;
     expect(parseRoute(routeToHash(portaria))).toEqual(portaria);
+
+    const promoter = { name: 'promoter', token: 'tok-abc123' } as const;
+    expect(parseRoute(routeToHash(promoter))).toEqual(promoter);
   });
 });

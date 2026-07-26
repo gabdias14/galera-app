@@ -19,6 +19,8 @@ export interface Guest {
   /** Código do link de convidado por onde essa pessoa entrou (atribuição).
    *  `PORTARIA` = chegou sem convite, foi adicionada na porta. */
   linkCode: string | null;
+  /** Últimos 4 dígitos do CPF/RG — opcional, só pra desempatar homônimo na portaria offline. */
+  docLast4: string | null;
   /** Check-in na portaria. */
   checkedInAt: string | null;
   /** Quanto pagou (ingresso/consumação), em reais. */
@@ -84,6 +86,22 @@ export interface Promoter {
   commissionPct: number;
   active: boolean;
   createdAt: string;
+  /** Token do link que o promoter usa pra ver o próprio desempenho, sem login. */
+  publicToken: string;
+}
+
+/** O que o promoter vê no próprio link — números já calculados, sem enxergar o resto da produtora. */
+export interface PromoterView {
+  name: string;
+  commissionPct: number;
+  active: boolean;
+  links: number;
+  opens: number;
+  confirmed: number;
+  attended: number;
+  revenue: number;
+  commission: number;
+  conversion: number;
 }
 
 export interface Org {
@@ -157,6 +175,7 @@ export interface RsvpInput {
   phone?: string | null;
   waOptIn?: boolean;
   linkCode?: string | null;
+  docLast4?: string | null;
   /**
    * Prova de que quem responde é dono daquele nome. Emitido na primeira
    * resposta e guardado no aparelho — sem ele, qualquer um com o link
@@ -216,6 +235,8 @@ export interface DataAdapter {
   listPromoters(orgId: string): Promise<Promoter[]>;
   createPromoter(orgId: string, name: string, phone: string | null, commissionPct: number): Promise<Promoter>;
   updatePromoter(promoterId: string, patch: Partial<Pick<Promoter, 'name' | 'phone' | 'commissionPct' | 'active'>>): Promise<void>;
+  /** Sem login: o token do link já é a credencial (mesmo padrão do link de convidado). */
+  getPromoterView(token: string): Promise<PromoterView | null>;
 
   createGuestLink(
     eventId: string,

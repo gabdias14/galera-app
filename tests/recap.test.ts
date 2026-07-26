@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRecapData, recapFileName } from '../src/lib/recap';
+import { buildCountdownData, buildRecapData, buildSeasonRecapData, recapFileName } from '../src/lib/recap';
 import { makeEvent as baseEvent, makeGuest } from './fixtures';
 import type { EventRecord } from '../src/types';
 
@@ -100,5 +100,57 @@ describe('recapFileName', () => {
     expect(recapFileName('Churrasco do Gabriel 🍖')).toBe('recap-churrasco-do-gabriel.png');
     expect(recapFileName('Pré-Carnaval na Cobertura')).toBe('recap-pre-carnaval-na-cobertura.png');
     expect(recapFileName('🎉')).toBe('recap-role.png');
+  });
+});
+
+describe('buildCountdownData', () => {
+  it('conta dias corridos até o rolê e não deixa ir negativo', () => {
+    const data = buildCountdownData(makeEvent({ date: '2026-08-10' }), NOW);
+    expect(data.daysLeft).toBe(15);
+    expect(buildCountdownData(makeEvent({ date: '2026-07-01' }), NOW).daysLeft).toBe(0);
+  });
+
+  it('separa confirmados de talvez e leva a lotação', () => {
+    const data = buildCountdownData(
+      makeEvent({
+        capacity: 100,
+        guests: [makeGuest('A', 'vou'), makeGuest('B', 'talvez')],
+      }),
+      NOW,
+    );
+    expect(data.confirmedCount).toBe(1);
+    expect(data.maybeCount).toBe(1);
+    expect(data.capacity).toBe(100);
+  });
+});
+
+describe('buildSeasonRecapData', () => {
+  it('soma só edições passadas e ignora a futura', () => {
+    const data = buildSeasonRecapData(
+      'Aurora Produções',
+      [
+        makeEvent({
+          id: 'e1',
+          date: '2026-01-10',
+          guests: [makeGuest('Ana', 'vou', { checkedInAt: '2026-01-10T23:00:00Z', amountPaid: 100 })],
+        }),
+        makeEvent({
+          id: 'e2',
+          date: '2026-06-10',
+          guests: [makeGuest('Ana', 'vou', { checkedInAt: '2026-06-10T23:00:00Z', amountPaid: 80 })],
+        }),
+        makeEvent({ id: 'e3', date: '2026-12-31', guests: [] }), // futura, fora da temporada
+      ],
+      NOW,
+    );
+    expect(data.editionsCount).toBe(2);
+    expect(data.totalAttendance).toBe(2);
+    expect(data.totalRevenue).toBe(180);
+    expect(data.topAttendees).toEqual(['Ana']);
+  });
+
+  it('não quebra sem histórico', () => {
+    const data = buildSeasonRecapData('Nova Produtora', [], NOW);
+    expect(data).toMatchObject({ editionsCount: 0, totalAttendance: 0, totalRevenue: 0, topAttendees: [] });
   });
 });

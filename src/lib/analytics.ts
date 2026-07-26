@@ -15,6 +15,7 @@ export type ProductEvent =
   | 'recap_gerado'
   | 'recap_compartilhado'
   | 'convite_aberto_via_recap'
+  | 'cta_criar_clicado'
   | 'erro_js';
 
 let adapter: DataAdapter | null = null;

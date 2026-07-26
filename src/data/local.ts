@@ -8,12 +8,14 @@ import type {
   Org,
   OutboxMessage,
   Promoter,
+  PromoterView,
   RsvpInput,
   RsvpResult,
 } from '../types';
 import { NameTakenError } from '../types';
 import { avatarColor, sameName, shortCode, uid } from '../lib/format';
 import { downscaleImage } from '../lib/image';
+import { promoterStats } from '../lib/audience';
 import { deviceId } from './identity';
 import { seedDb } from './seed';
 
@@ -171,6 +173,7 @@ export class LocalAdapter implements DataAdapter {
           existing.waOptInAt = input.waOptIn ? new Date().toISOString() : null;
         }
         if (input.linkCode && !existing.linkCode) existing.linkCode = input.linkCode;
+        if (input.docLast4 !== undefined && input.docLast4 !== null) existing.docLast4 = input.docLast4;
         return { guestId: existing.id, token };
       }
       const guest = {
@@ -183,6 +186,7 @@ export class LocalAdapter implements DataAdapter {
         linkCode: input.linkCode ?? null,
         checkedInAt: null,
         amountPaid: 0,
+        docLast4: input.docLast4 ?? null,
         token: input.token ?? uid(),
       };
       ev.guests.push(guest);
@@ -323,9 +327,31 @@ export class LocalAdapter implements DataAdapter {
       commissionPct,
       active: true,
       createdAt: new Date().toISOString(),
+      publicToken: uid(),
     };
     mutate((db) => db.promoters.push(promoter));
     return promoter;
+  }
+
+  async getPromoterView(token: string): Promise<PromoterView | null> {
+    const db = readDb();
+    const promoter = db.promoters.find((p) => p.publicToken === token);
+    if (!promoter) return null;
+    const me = deviceId();
+    const events = db.events.filter((e) => e.orgId === promoter.orgId).map((e) => hydrate(e, me));
+    const [stats] = promoterStats(events, [promoter]);
+    return {
+      name: promoter.name,
+      commissionPct: promoter.commissionPct,
+      active: promoter.active,
+      links: stats.links,
+      opens: stats.opens,
+      confirmed: stats.confirmed,
+      attended: stats.attended,
+      revenue: stats.revenue,
+      commission: stats.commission,
+      conversion: stats.conversion,
+    };
   }
 
   async updatePromoter(
