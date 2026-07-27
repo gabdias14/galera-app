@@ -1,5 +1,9 @@
 # Lista de melhorias
 
+> **Backlog concluído.** Dos 26 itens abaixo, 23 estão fechados no código. O que sobrou
+> (1, 9 e 15) foi transportado para **[docs/roadmap.md](roadmap.md)**, que é o documento
+> vivo daqui pra frente. Esta lista fica como registro do que foi feito e por quê.
+
 Backlog priorizado do estado real do código (julho/2026). Cada item traz **por que importa**,
 **onde mexer** e um tamanho grosseiro: P (até 1 dia), M (2–5 dias), G (mais de uma semana).
 

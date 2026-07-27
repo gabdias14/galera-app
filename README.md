@@ -110,11 +110,13 @@ O caminho pra API oficial, os templates e o custo estão em [docs/whatsapp.md](d
 
 ## Planejamento
 
-- [docs/melhorias.md](docs/melhorias.md) — backlog priorizado (P0 a P3) do estado real do código
+- [docs/roadmap.md](docs/roadmap.md) — **o backlog vivo**: pesquisa com usuário, UX e backend
+- [docs/melhorias.md](docs/melhorias.md) — backlog anterior, concluído (registro do que foi feito)
 - [docs/business-plan.md](docs/business-plan.md) — modelo de receita, unit economics, concorrência e riscos
 - [docs/marketing-plan.md](docs/marketing-plan.md) — plano de 90 dias, canais e redes sociais
+- [docs/startup/](docs/startup/) — jurídico, captação, modelo financeiro e pitch deck
 
-O que ainda **não** existe: push nativo e disparo automático de WhatsApp (hoje a fila é enviada com
-confirmação humana — ver docs/whatsapp.md), login próprio de promoter, campos de preço/lotação/produtora
-no formulário de criação (o modelo e o banco já aceitam), edição/exclusão de rolê pela interface e
-legenda nas fotos do álbum.
+O que ainda **não** existe: projeto Supabase no ar (o código dos dois backends está pronto — é o item
+que destrava todo o resto), push nativo, disparo automático de WhatsApp (hoje a fila é enviada com
+confirmação humana — ver [docs/whatsapp.md](docs/whatsapp.md)), venda de ingresso com PIX
+(implicação regulatória) e recuperação dos rolês do anfitrião se ele perder o aparelho.
