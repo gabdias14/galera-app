@@ -49,6 +49,7 @@ src/
     recap.ts            # gerador do Recap (canvas 1080×1920)
     audience.ts         # B2B: score de público, tiers, projeção, promoters, portaria
     split.ts            # rateio do rolê: saldo por pessoa e quem paga quem
+    plan.ts             # o que é grátis e o que é Pro (régua comercial num lugar só)
     messages.ts         # textos de campanha e lembrete de WhatsApp
     phone.ts            # telefone BR (E.164) e link do WhatsApp
     image.ts            # redimensiona foto antes de subir/guardar
@@ -111,6 +112,7 @@ O caminho pra API oficial, os templates e o custo estão em [docs/whatsapp.md](d
 ## Planejamento
 
 - [docs/roadmap.md](docs/roadmap.md) — **o backlog vivo**: pesquisa com usuário, UX e backend
+- [docs/contas-e-planos.md](docs/contas-e-planos.md) — identidade, assinatura e por que o convidado nunca faz conta
 - [docs/melhorias.md](docs/melhorias.md) — backlog anterior, concluído (registro do que foi feito)
 - [docs/business-plan.md](docs/business-plan.md) — modelo de receita, unit economics, concorrência e riscos
 - [docs/marketing-plan.md](docs/marketing-plan.md) — plano de 90 dias, canais e redes sociais
@@ -119,4 +121,5 @@ O caminho pra API oficial, os templates e o custo estão em [docs/whatsapp.md](d
 O que ainda **não** existe: projeto Supabase no ar (o código dos dois backends está pronto — é o item
 que destrava todo o resto), push nativo, disparo automático de WhatsApp (hoje a fila é enviada com
 confirmação humana — ver [docs/whatsapp.md](docs/whatsapp.md)), venda de ingresso com PIX
-(implicação regulatória) e recuperação dos rolês do anfitrião se ele perder o aparelho.
+(implicação regulatória) e o webhook do provedor de pagamento que ativa a assinatura
+(ver [docs/contas-e-planos.md](docs/contas-e-planos.md), seção 7).

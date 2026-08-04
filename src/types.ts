@@ -121,10 +121,31 @@ export interface PromoterView {
   conversion: number;
 }
 
+/**
+ * Plano da produtora. A assinatura é da produtora, não da pessoa: o mesmo
+ * usuário pode ter uma casa pagante e um coletivo no grátis.
+ */
+export type Plan = 'free' | 'pro';
+
 export interface Org {
   id: string;
   name: string;
   createdAt: string;
+  plan: Plan;
+}
+
+/**
+ * Quem está usando o app agora.
+ *
+ * `email: null` é o estado normal e maioritário — convidado que abriu um link
+ * nunca precisa se identificar, e é isso que faz o convite circular sem
+ * atrito (ver README, "o link é a chave"). Identificar-se é opcional e serve
+ * a quem organiza: recupera os rolês em outro aparelho e carrega a assinatura.
+ */
+export interface Session {
+  email: string | null;
+  /** true depois que a pessoa confirmou o e-mail; false = sessão anônima. */
+  identified: boolean;
 }
 
 export type NotificationKind = 'convite' | 'lembrete' | 'enquete' | 'campanha';
@@ -223,6 +244,17 @@ export class NameTakenError extends Error {
 export interface DataAdapter {
   readonly kind: 'local' | 'supabase';
   init(): Promise<void>;
+
+  /* ---------- identidade (opcional, só pra quem organiza) ---------- */
+
+  /** Quem está usando agora. Nunca lança: sem sessão, devolve anônimo. */
+  getSession(): Promise<Session>;
+  /**
+   * Manda o link de acesso pro e-mail. Vincula a sessão anônima atual em vez
+   * de criar outra, pra pessoa não perder os rolês que já criou.
+   */
+  signIn(email: string): Promise<void>;
+  signOut(): Promise<void>;
   /** Rolês que o usuário atual criou ou de que participa. */
   listEvents(): Promise<EventRecord[]>;
   getEvent(id: string): Promise<EventRecord | null>;

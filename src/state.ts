@@ -1,4 +1,4 @@
-import type { EventRecord, Org, OutboxMessage, Promoter, PromoterView, ThemeColor } from './types';
+import type { EventRecord, Org, OutboxMessage, Promoter, PromoterView, Session, ThemeColor } from './types';
 import type { ProTab, Route } from './router';
 import type { AudienceFilter, ScoredContact } from './lib/audience';
 import { getMyName } from './data/identity';
@@ -11,6 +11,12 @@ export interface AppState {
   error: string | null;
   /** Backend em uso — muda a mensagem quando um convite não é encontrado. */
   backend: 'local' | 'supabase';
+  /** Quem está usando. Anônimo é o normal: só quem organiza precisa entrar. */
+  session: Session;
+  /** E-mail digitado na tela de acesso (preservado entre redesenhos). */
+  authEmail: string;
+  /** true depois de mandar o link mágico — troca a tela pelo "confira o e-mail". */
+  authSent: boolean;
   /** Rolês da home. */
   events: EventRecord[];
   /** Rolê aberto no momento. */
@@ -69,6 +75,9 @@ export const state: AppState = {
   loading: true,
   error: null,
   backend: 'local',
+  session: { email: null, identified: false },
+  authEmail: '',
+  authSent: false,
   events: [],
   event: null,
   linkCode: null,

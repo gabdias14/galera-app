@@ -8,10 +8,12 @@ import type {
   NotificationKind,
   Org,
   OutboxMessage,
+  Plan,
   Promoter,
   PromoterView,
   RsvpInput,
   RsvpResult,
+  Session,
 } from '../types';
 import { NameTakenError } from '../types';
 import { avatarColor, sameName, shortCode, uid } from '../lib/format';
@@ -79,10 +81,35 @@ function readDb(): Db {
   return fresh;
 }
 
+const SESSION_KEY = 'galera.session.v1';
+
+function readLocalSession(): Session {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<Session>;
+      if (parsed.email) return { email: parsed.email, identified: true };
+    }
+  } catch {
+    /* storage indisponível ou JSON corrompido: segue anônimo */
+  }
+  return { email: null, identified: false };
+}
+
+function writeLocalSession(session: Session): void {
+  try {
+    if (session.email) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* modo privado: a sessão só vale enquanto a aba viver */
+  }
+}
+
 /** Apaga o banco local — a próxima leitura reseeda do zero (ver readDb). Usado pelo "reiniciar demo". */
 export function resetLocalDb(): void {
   try {
     localStorage.removeItem(DB_KEY);
+    localStorage.removeItem(SESSION_KEY);
   } catch {
     /* modo privado / storage indisponível: nada a limpar */
   }
@@ -333,10 +360,46 @@ export class LocalAdapter implements DataAdapter {
   }
 
   async createOrg(name: string): Promise<Org> {
-    const org: StoredOrg = { id: uid(), name, createdAt: new Date().toISOString(), ownerId: deviceId() };
+    const org: StoredOrg = {
+      id: uid(),
+      name,
+      createdAt: new Date().toISOString(),
+      ownerId: deviceId(),
+      plan: 'free',
+    };
     mutate((db) => db.orgs.push(org));
     const { ownerId: _ownerId, ...rest } = org;
     return rest;
+  }
+
+  /* ---------- identidade simulada ----------
+   * O modo local não tem servidor pra validar e-mail, então a "sessão" é só
+   * um registro no próprio aparelho. Serve pra desenvolver e pra demonstrar
+   * o fluxo — no Supabase quem manda é o link mágico de verdade.
+   */
+
+  async getSession(): Promise<Session> {
+    return readLocalSession();
+  }
+
+  async signIn(email: string): Promise<void> {
+    writeLocalSession({ email: email.trim().toLowerCase(), identified: true });
+  }
+
+  async signOut(): Promise<void> {
+    writeLocalSession({ email: null, identified: false });
+  }
+
+  /**
+   * Só existe no modo local: alterna o plano da produtora pra conseguir
+   * mostrar as duas experiências numa demonstração. No Supabase o plano vem
+   * do provedor de pagamento e o cliente não escreve nele.
+   */
+  async setLocalPlan(orgId: string, plan: Plan): Promise<void> {
+    mutate((db) => {
+      const org = db.orgs.find((o) => o.id === orgId);
+      if (org) org.plan = plan;
+    });
   }
 
   async listOrgEvents(orgId: string): Promise<EventRecord[]> {

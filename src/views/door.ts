@@ -6,6 +6,8 @@ import { doorStats } from '../lib/audience';
 import { longDate } from '../lib/date';
 import { scannerSupported } from '../lib/qr';
 import { queueForEvent } from '../data/offlineQueue';
+import { can } from '../lib/plan';
+import { paywallHtml } from './paywall';
 
 const STATUS_LABEL: Record<string, string> = {
   vou: 'confirmou',
@@ -18,6 +20,15 @@ const STATUS_LABEL: Record<string, string> = {
  * Busca rápida, botão grande e contador ao vivo — nada de scroll infinito.
  */
 export function renderDoor(ev: EventRecord): string {
+  const org = state.orgs.find((o) => o.id === ev.orgId);
+  if (!can(org, 'portaria')) {
+    return (
+      '<div class="topbar"><button class="back-btn" data-action="go-home">← voltar</button></div>' +
+      `<h1 style="font-size:clamp(1.4rem,4vw,1.9rem); margin:8px 0 18px;">${ev.emoji} ${escapeHtml(ev.title)}</h1>` +
+      paywallHtml(org, 'portaria')
+    );
+  }
+
   const stats = doorStats(ev);
   const term = normalizeName(state.doorSearch);
   // busca só de números = últimos dígitos do CPF/RG, pra desempatar homônimo

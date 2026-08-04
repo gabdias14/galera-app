@@ -55,7 +55,10 @@ export function renderHome(): string {
     '</div>' +
     '<div class="section-label">Seus rolês</div>' +
     board +
-    '<div style="text-align:center; margin-top:40px;">' +
+    '<div style="text-align:center; margin-top:40px; display:flex; flex-direction:column; gap:10px; align-items:center;">' +
+    (state.session.identified
+      ? `<button class="link-btn" style="color:var(--muted-2);" data-action="go-entrar">conectado como ${escapeHtml(state.session.email ?? '')}</button>`
+      : '<button class="link-btn" style="color:var(--muted-2);" data-action="go-entrar">salvar meus rolês em outro aparelho</button>') +
     '<button class="link-btn" style="color:var(--muted-2);" data-action="go-privacy">privacidade e seus dados</button>' +
     '</div>'
   );

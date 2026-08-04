@@ -7,6 +7,7 @@ export type Route =
   | { name: 'edit'; id: string }
   | { name: 'door'; id: string }
   | { name: 'privacidade' }
+  | { name: 'entrar' }
   | { name: 'promoter'; token: string }
   | { name: 'pro'; tab: ProTab };
 
@@ -31,6 +32,7 @@ export function parseRoute(hash: string = location.hash): Route {
   }
   if (parts[0] === 'novo') return { name: 'create' };
   if (parts[0] === 'privacidade') return { name: 'privacidade' };
+  if (parts[0] === 'entrar') return { name: 'entrar' };
   if (parts[0] === 'promoter' && parts[1]) return { name: 'promoter', token: parts[1] };
   if (parts[0] === 'pro') {
     const tab = PRO_TABS.find((t) => t === parts[1]) ?? 'painel';
@@ -47,6 +49,7 @@ export function routeToHash(route: Route): string {
   if (route.name === 'door') return `#/e/${encodeURIComponent(route.id)}/portaria`;
   if (route.name === 'edit') return `#/e/${encodeURIComponent(route.id)}/editar`;
   if (route.name === 'privacidade') return '#/privacidade';
+  if (route.name === 'entrar') return '#/entrar';
   if (route.name === 'promoter') return `#/promoter/${encodeURIComponent(route.token)}`;
   if (route.name === 'create') return '#/novo';
   if (route.name === 'pro') return `#/pro/${route.tab}`;

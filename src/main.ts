@@ -1,10 +1,10 @@
 import './styles/main.css';
 
-import type { EventRecord, RsvpStatus } from './types';
+import type { EventRecord, Plan, RsvpStatus } from './types';
 import { state } from './state';
 import { getAdapter } from './data';
 import { addKnownEvent } from './data/known';
-import { resetLocalDb } from './data/local';
+import { resetLocalDb, type LocalAdapter } from './data/local';
 import {
   allRememberedGuestRecords,
   forgetGuestToken,
@@ -26,6 +26,7 @@ import {
 import { renderEvent } from './views/event';
 import { renderPro } from './views/pro';
 import { renderPrivacidade } from './views/privacy';
+import { renderEntrar } from './views/auth';
 import { renderPromoterView } from './views/promoterView';
 import { renderDoor } from './views/door';
 import {
@@ -96,6 +97,7 @@ function render(): void {
     app.innerHTML = renderCreate();
     wireCreatePreview();
   } else if (route.name === 'privacidade') app.innerHTML = renderPrivacidade();
+  else if (route.name === 'entrar') app.innerHTML = renderEntrar();
   else if (route.name === 'promoter') app.innerHTML = renderPromoterView();
   else if (route.name === 'pro') app.innerHTML = renderPro();
   else if (route.name === 'door') {
@@ -122,6 +124,7 @@ const ROUTE_LABEL: Record<Route['name'], string> = {
   event: 'Convite',
   door: 'Portaria',
   privacidade: 'Privacidade',
+  entrar: 'Sua conta',
   promoter: 'Painel do promoter',
   pro: 'Galera Pro',
 };
@@ -177,7 +180,7 @@ async function loadRoute(route: Route): Promise<void> {
     return;
   }
 
-  if (route.name === 'privacidade') {
+  if (route.name === 'privacidade' || route.name === 'entrar') {
     state.loading = false;
     render();
     return;
@@ -246,7 +249,12 @@ async function loadRoute(route: Route): Promise<void> {
       // conta a abertura do link do promoter — só uma vez por visita
       if (route.name === 'event' && route.code) await data.registerLinkOpen(ev.id, route.code);
       unsubscribe = data.subscribe(ev.id, () => void refreshEvent());
-      if (route.name === 'door') void flushOfflineQueue();
+      if (route.name === 'door') {
+        // a portaria é recurso do Pro: precisa da produtora em mãos pra
+        // saber se libera ou mostra o bloqueio
+        state.orgs = await data.listOrgs();
+        void flushOfflineQueue();
+      }
     }
   } catch (err) {
     const cached = eventCache.get(route.id);
@@ -564,6 +572,22 @@ document.addEventListener('click', (e) => {
     case 'go-privacy':
       navigate({ name: 'privacidade' });
       break;
+    case 'go-entrar':
+      state.error = null;
+      state.authSent = false;
+      navigate({ name: 'entrar' });
+      break;
+    case 'auth-reset':
+      state.authSent = false;
+      state.error = null;
+      render();
+      break;
+    case 'sign-out':
+      void signOut();
+      break;
+    case 'demo-set-plan':
+      void setDemoPlan(target.getAttribute('data-plan') === 'pro' ? 'pro' : 'free');
+      break;
     case 'open-event':
       navigate({ name: 'event', id, code: null });
       break;
@@ -750,6 +774,30 @@ async function deleteEvent(eventId: string): Promise<void> {
     state.error = messageOf(err);
     render();
   }
+}
+
+async function signOut(): Promise<void> {
+  const ok = window.confirm('Sair da conta? Seus rolês continuam salvos e voltam quando você entrar de novo.');
+  if (!ok) return;
+  await withBusy(() => data.signOut());
+  state.session = await data.getSession();
+  state.authEmail = '';
+  state.authSent = false;
+  fireToast('Você saiu da conta.');
+  navigate({ name: 'home' });
+}
+
+/**
+ * Só no modo local (demo): alterna o plano pra mostrar as duas experiências
+ * numa reunião. No Supabase o plano vem do provedor de pagamento e o cliente
+ * não tem permissão de escrita — ver supabase/migrations/0008_assinatura.sql.
+ */
+async function setDemoPlan(plan: Plan): Promise<void> {
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (!org || data.kind !== 'local') return;
+  await (data as LocalAdapter).setLocalPlan(org.id, plan);
+  state.orgs = await data.listOrgs();
+  render();
 }
 
 async function deleteExpense(expenseId: string): Promise<void> {
@@ -1167,6 +1215,32 @@ document.addEventListener('submit', (e) => {
     return;
   }
 
+  if (form.id === 'authForm') {
+    e.preventDefault();
+    const el = document.getElementById('authEmail') as HTMLInputElement | null;
+    const email = el?.value.trim() ?? '';
+    if (!email) return;
+    state.authEmail = email;
+    state.error = null;
+    void (async () => {
+      try {
+        await withBusy(() => data.signIn(email));
+        // no modo local a "sessão" é imediata; no Supabase espera o link do e-mail
+        state.session = await data.getSession();
+        state.authSent = !state.session.identified;
+        if (state.session.identified) {
+          fireToast('Pronto, seus rolês estão salvos.');
+          navigate({ name: 'home' });
+          return;
+        }
+      } catch (err) {
+        state.error = messageOf(err);
+      }
+      render();
+    })();
+    return;
+  }
+
   if (form.id === 'expenseForm') {
     e.preventDefault();
     const ev = state.event;
@@ -1331,7 +1405,12 @@ async function boot(): Promise<void> {
   } catch (err) {
     state.error = messageOf(err);
   }
-  track('app_aberto', { backend: data.kind });
+  try {
+    state.session = await data.getSession();
+  } catch {
+    /* sem sessão o app segue anônimo, que é o estado normal */
+  }
+  track('app_aberto', { backend: data.kind, identificado: state.session.identified });
 
   // ?src=recap na URL prova que a instalação veio de um Recap compartilhado —
   // é a métrica que fecha o K-factor (docs/business-plan.md, seção 11)

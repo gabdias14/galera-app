@@ -7,12 +7,14 @@ import type {
   NotificationKind,
   Org,
   OutboxMessage,
+  Plan,
   Photo,
   Poll,
   Promoter,
   PromoterView,
   RsvpInput,
   RsvpResult,
+  Session,
   RsvpStatus,
   ThemeColor,
 } from '../types';
@@ -105,6 +107,31 @@ const REALTIME_TABLES = [
   'checkins',
   'expenses',
 ];
+
+/**
+ * Pra onde o link do e-mail devolve a pessoa. Sem `VITE_PUBLIC_URL` usa a
+ * origem atual — o que faz o fluxo funcionar em dev e no demo do Pages sem
+ * configuração extra.
+ */
+function redirectUrl(): string {
+  const base = import.meta.env.VITE_PUBLIC_URL;
+  return base ? base.replace(/\/$/, '') + '/' : `${location.origin}${location.pathname}`;
+}
+
+/**
+ * Espelha `public.org_plan` da migration 0008: assinatura cancelada continua
+ * valendo até o fim do período pago. O banco é a fonte da verdade — isto aqui
+ * só evita uma ida a mais ao servidor pra desenhar a tela.
+ */
+function effectivePlan(
+  rows: { plan: string; status: string; current_period_end: string | null }[] | null | undefined,
+): Plan {
+  const sub = Array.isArray(rows) ? rows[0] : rows;
+  if (!sub || sub.plan !== 'pro') return 'free';
+  if (sub.status === 'active') return 'pro';
+  const until = sub.current_period_end ? Date.parse(sub.current_period_end) : 0;
+  return until > Date.now() ? 'pro' : 'free';
+}
 
 function num(value: number | string | null | undefined): number {
   const n = typeof value === 'string' ? parseFloat(value) : (value ?? 0);
@@ -207,6 +234,55 @@ export class SupabaseAdapter implements DataAdapter {
       console.warn('[galera] login anônimo indisponível, seguindo sem identidade:', error.message);
       return;
     }
+    this.userId = signed.user?.id ?? null;
+  }
+
+  /* ---------- identidade ---------- */
+
+  async getSession(): Promise<Session> {
+    const { data } = await this.sb.auth.getSession();
+    const user = data.session?.user;
+    // `is_anonymous` vem no JWT; e-mail confirmado é o que caracteriza
+    // a conta permanente
+    const email = user?.email ?? null;
+    return { email, identified: !!email };
+  }
+
+  /**
+   * Manda o link de acesso. O caminho depende de onde a pessoa está:
+   *
+   * - **sessão anônima** (o caso comum — ela usou o app antes de se
+   *   identificar): `updateUser` vincula o e-mail ao usuário que já existe,
+   *   preservando o id. Os rolês continuam dela. Criar um usuário novo aqui
+   *   seria a forma mais fácil de fazer alguém perder tudo o que criou.
+   * - **e-mail já cadastrado em outra conta**: aí é login de verdade, e o
+   *   `signInWithOtp` troca a sessão. Os rolês anônimos deste aparelho ficam
+   *   pra trás — é o comportamento correto, ela está entrando na conta dela.
+   */
+  async signIn(email: string): Promise<void> {
+    const clean = email.trim().toLowerCase();
+    const { data } = await this.sb.auth.getSession();
+    const user = data.session?.user;
+
+    if (user && !user.email) {
+      const { error } = await this.sb.auth.updateUser({ email: clean });
+      if (!error) return;
+      // e-mail já pertence a outra conta: cai pro login normal
+      if (!/already|registered|exists/i.test(error.message)) throw new Error(error.message);
+    }
+
+    const { error } = await this.sb.auth.signInWithOtp({
+      email: clean,
+      options: { emailRedirectTo: redirectUrl() },
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async signOut(): Promise<void> {
+    await this.sb.auth.signOut();
+    // volta pro anônimo: sem isso o app fica sem identidade nenhuma e o
+    // anfitrião não consegue nem criar um rolê novo
+    const { data: signed } = await this.sb.auth.signInAnonymously();
     this.userId = signed.user?.id ?? null;
   }
 
@@ -474,9 +550,17 @@ export class SupabaseAdapter implements DataAdapter {
   /* ---------- B2B ---------- */
 
   async listOrgs(): Promise<Org[]> {
-    const { data, error } = await this.sb.from('orgs').select('id, name, created_at').order('created_at');
+    const { data, error } = await this.sb
+      .from('orgs')
+      .select('id, name, created_at, org_subscriptions ( plan, status, current_period_end )')
+      .order('created_at');
     if (error) throw new Error(error.message);
-    return data.map((o) => ({ id: o.id, name: o.name, createdAt: o.created_at }));
+    return data.map((o) => ({
+      id: o.id,
+      name: o.name,
+      createdAt: o.created_at,
+      plan: effectivePlan(o.org_subscriptions),
+    }));
   }
 
   async createOrg(name: string): Promise<Org> {
@@ -486,7 +570,9 @@ export class SupabaseAdapter implements DataAdapter {
       .select('id, name, created_at')
       .single();
     if (error) throw new Error(error.message);
-    return { id: data.id, name: data.name, createdAt: data.created_at };
+    // produtora nova nasce no grátis: a assinatura é criada pelo webhook do
+    // provedor de pagamento, não por aqui
+    return { id: data.id, name: data.name, createdAt: data.created_at, plan: 'free' };
   }
 
   async listOrgEvents(orgId: string): Promise<EventRecord[]> {

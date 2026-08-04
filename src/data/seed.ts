@@ -310,6 +310,9 @@ function proOperation(hostId: string, rng: () => number): ProSeed {
     name: 'Aurora Produções',
     createdAt: isoTimeAgo(400),
     ownerId: hostId,
+    // a demonstração nasce no Pro pra mostrar o produto inteiro funcionando;
+    // o seletor de plano da tela Pro alterna pra free e revela o paywall
+    plan: 'pro',
   };
 
   const promoters: Promoter[] = [

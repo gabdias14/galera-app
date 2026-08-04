@@ -96,17 +96,17 @@ B2B direta. Esse é o tipo de decisão que só o dado permite.
 Listado por ordem de suspeita, do mais provável ao mais especulativo. **Não
 construa tudo:** deixe a seção 1 dizer quais destes são reais.
 
-### 2.1 O anfitrião não tem como recuperar os próprios rolês · M — **risco real**
-Hoje a identidade do anfitrião é uma sessão anônima do Supabase
-(`signInAnonymously` em `src/data/supabase.ts`) ou o id do aparelho no modo
-local. Limpou o navegador, trocou de celular, desinstalou o app: **os rolês
-somem e não há como recuperar**. Para o convidado isso é aceitável (o link é a
-chave); para quem organiza, é perda de dado do usuário.
+### 2.1 O anfitrião não tinha como recuperar os próprios rolês · ✅ resolvido
+A identidade do anfitrião era só uma sessão anônima do Supabase
+(`signInAnonymously`) ou o id do aparelho no modo local. Limpar o navegador,
+trocar de celular ou desinstalar o app apagava os rolês sem recuperação. Para o
+convidado isso é aceitável (o link é a chave); para quem organiza, era perda de
+dado do usuário.
 
-→ O caminho mais barato é vincular a sessão anônima a um e-mail ou telefone
-depois do fato ("salve seus rolês"), que o Supabase Auth suporta sem forçar tela
-de login na entrada. Isso preserva a decisão de "sem cadastro" que faz o produto
-funcionar, e cobre o caso da perda.
+→ **Feito**: `#/entrar` vincula a sessão anônima a um e-mail depois do fato
+("salve seus rolês"), preservando o id do usuário — e portanto os rolês. A
+decisão de "sem cadastro" para o convidado continua intacta. Ver
+[contas-e-planos.md](contas-e-planos.md).
 
 ### 2.2 Estados vazios que não ensinam · P
 A home cai direto no board; a aba Rachar diz "ninguém lançou nada ainda". Todo

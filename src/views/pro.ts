@@ -1,6 +1,8 @@
 import type { EventRecord, OutboxMessage } from '../types';
 import { state } from '../state';
 import { escapeHtml, initials, plural } from '../lib/format';
+import { can, checkoutUrl } from '../lib/plan';
+import { paywallHtml, planBadgeHtml } from './paywall';
 import { formatPhoneBR } from '../lib/phone';
 import { formatMoney, formatMoneyShort } from '../lib/messages';
 import { longDate, relativeDays } from '../lib/date';
@@ -29,7 +31,7 @@ function topbar(): string {
     logoHtml() +
     '<button class="pro-switch" data-action="go-home">🎈 Modo pessoal</button>' +
     '</div>' +
-    '<div class="hero__eyebrow">Galera Pro</div>' +
+    `<div class="hero__eyebrow">Galera Pro ${planBadgeHtml(org)}</div>` +
     `<h1 style="font-size:clamp(1.6rem,4.5vw,2.2rem); margin:8px 0 6px;">${escapeHtml(org?.name ?? 'Sua produtora')}</h1>` +
     '<p style="color:var(--muted); margin-bottom:22px; max-width:52ch;">Sua base de público, seus promoters e a portaria — no mesmo lugar em que o convite é criado.</p>'
   );
@@ -95,9 +97,24 @@ function renderPainel(): string {
   );
 }
 
+/** Exportar é Pro: no grátis o botão vira convite pra assinar. */
+function exportButtonHtml(): string {
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (can(org, 'exportar')) {
+    return '<button class="pro-btn pro-btn--ghost" data-action="export-audience">⬇️ Exportar CSV</button>';
+  }
+  return (
+    `<a class="pro-btn pro-btn--locked" href="${escapeHtml(checkoutUrl(org))}" target="_blank" rel="noopener noreferrer">` +
+    '🔒 Exportar CSV — no Pro</a>'
+  );
+}
+
 /* ===================== público ===================== */
 
 function campaignPanel(): string {
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (!can(org, 'campanha')) return paywallHtml(org, 'campanha');
+
   const upcoming = state.orgEvents.filter((e) => !isPastEvent(e));
   if (!upcoming.length) {
     return (
@@ -232,10 +249,10 @@ function renderPublico(): string {
     (dormantes > 0
       ? '<div class="pro-form-row" style="margin-top:4px;">' +
         `<button class="pro-btn" data-action="suggest-winback">🔔 Sugestão de resgate (${dormantes} sumidos/em risco)</button>` +
-        '<button class="pro-btn pro-btn--ghost" data-action="export-audience">⬇️ Exportar CSV</button>' +
+        exportButtonHtml() +
         '</div>'
       : '<div class="pro-form-row" style="margin-top:4px;">' +
-        '<button class="pro-btn pro-btn--ghost" data-action="export-audience">⬇️ Exportar CSV</button>' +
+        exportButtonHtml() +
         '</div>') +
     '</div>' +
     campaignPanel() +
@@ -248,6 +265,9 @@ function renderPublico(): string {
 /* ===================== promoters ===================== */
 
 function renderPromoters(): string {
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (!can(org, 'promoters')) return paywallHtml(org, 'promoters');
+
   const stats = promoterStats(state.orgEvents, state.promoters);
   const rows = stats
     .map(
@@ -282,6 +302,27 @@ function renderPromoters(): string {
   );
 }
 
+/**
+ * Alternador de plano — **só aparece no modo local**, pra conseguir mostrar o
+ * grátis e o Pro numa demonstração sem mexer em banco. No Supabase o plano vem
+ * do provedor de pagamento e o cliente não escreve nele
+ * (supabase/migrations/0008_assinatura.sql).
+ */
+function demoPlanSwitcherHtml(): string {
+  if (state.backend !== 'local') return '';
+  const org = state.orgs.find((o) => o.id === state.orgId);
+  if (!org) return '';
+  const btn = (plan: 'free' | 'pro', label: string) =>
+    `<button data-action="demo-set-plan" data-plan="${plan}"${org.plan === plan ? ' class="is-active"' : ''}>${label}</button>`;
+  return (
+    '<div class="demo-plan">' +
+    '<span>🎭 Demonstração — ver como:</span>' +
+    btn('free', 'Grátis') +
+    btn('pro', 'Pro') +
+    '</div>'
+  );
+}
+
 /* ===================== dispatcher ===================== */
 
 export function renderPro(): string {
@@ -301,11 +342,12 @@ export function renderPro(): string {
   }
 
   const body =
-    state.proTab === 'painel'
+    demoPlanSwitcherHtml() +
+    (state.proTab === 'painel'
       ? renderPainel()
       : state.proTab === 'publico'
         ? renderPublico()
-        : renderPromoters();
+        : renderPromoters());
 
   return (
     topbar() +
