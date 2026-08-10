@@ -210,6 +210,15 @@ As três ideias levantadas na conversa, com veredicto honesto:
 | **Rachar a conta** | ✅ Feito, nativo | `src/lib/split.ts` — melhorias em 2.4 e 2.5 |
 | **Integrar com marketplace (Sympla/Shotgun)** | Estudar depois de ter tração | Ver abaixo |
 | **Cartão NFC / cashless** | Guardar como visão, não construir | `docs/startup/ideia-nfc-cashless.md` |
+| **Rede de promoters (ranking + feed)** | Boa ideia, desenho precisa mudar; ano 2 | `docs/rede-de-promoters.md` |
+
+### Sobre a rede de promoters (ranking + feed)
+Estudada em [rede-de-promoters.md](rede-de-promoters.md). Resumo: a ideia é boa
+— o promoter é um canal de distribuição que anda entre as casas —, mas a versão
+óbvia vaza faturamento entre produtoras concorrentes e esbarra na LGPD. O
+desenho que funciona é o promoter dono do próprio perfil, publicando **taxas em
+vez de dinheiro**. Precisa de densidade pra valer, então é ano 2. O que dá pra
+fazer já é o portfólio compartilhável do promoter.
 
 ### Sobre a integração com marketplace
 A ideia — "comprei ingresso no Sympla, divulgo pros meus amigos pelo Galera e
